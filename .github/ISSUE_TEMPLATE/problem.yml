@@ -1,0 +1,42 @@
+name: Something doesn't work
+description: aGoldenDiagnose itself has a problem (it doesn't start, misses a crash, says something wrong…)
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you post, protect your privacy.** Everything here is public, forever.
+        - Don't paste whole logs or reports. If a report helps, export it with **Export as a .zip → Hide them** (your user name and PC name become stars), then **look through the .zip yourself** before attaching it: games can write other personal details in their own logs (player names, server addresses, e-mail).
+        - Never post your real name, e-mail address, home address, passwords, keys or license codes.
+        - Screenshots: crop out anything that isn't aGoldenDiagnose (other windows, your desktop, your taskbar).
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options: ["Windows 11", "Windows 10", "Linux"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: aGoldenDiagnose version
+      description: Shown next to the name at the top left, like v1.25.
+      placeholder: v1.25
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again (if you know)
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: I checked that nothing I'm posting has my real name, e-mail, address or other personal details.
+          required: true

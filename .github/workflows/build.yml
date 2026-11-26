@@ -1,0 +1,261 @@
+name: Build and release
+# Every action below is pinned to an exact commit (the version is in the comment beside it), so nothing can change underneath it.
+# When a new version of the source is ready, it is put in this repository and the download is built from it,
+# here, on GitHub's own machines. It only ever runs on a timer or by hand, never for a pull request.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  source:
+    name: Bring in the newest source
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.sync.outputs.tag }}
+      fresh: ${{ steps.sync.outputs.fresh }}
+      commit: ${{ steps.sync.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: sync
+        shell: bash
+        env:
+          SOURCE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: SirGoldenTaco/agoldendiagnose
+        run: |
+          set -euo pipefail
+          if [ -z "${SOURCE_TOKEN:-}" ]; then echo "The UPDATE_TOKEN secret isn't set on this repository."; exit 1; fi
+          api() { curl -fsSL -H "Authorization: Bearer $SOURCE_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"; }
+          rel=$(api "https://api.github.com/repos/$SOURCE/releases/latest")
+          tag=$(echo "$rel" | jq -r '.tag_name')
+          asset=$(echo "$rel" | jq -r '.assets[] | select(.name == "aGoldenDiagnose-source.tgz") | .url' | head -n 1)
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then echo "No version found."; exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" --json body -q '.body' 2>/dev/null | grep -qi "built by GitHub from this repository"; then echo "Version $tag is already released."; echo "fresh=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$asset" ]; then echo "Version $tag has no source to publish yet."; echo "fresh=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          curl -fsSL -H "Authorization: Bearer $SOURCE_TOKEN" -H "Accept: application/octet-stream" -o "$RUNNER_TEMP/source.tgz" "$asset"
+          # everything except this workflow is replaced by the new source
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github -exec rm -rf {} +
+          tar -xzf "$RUNNER_TEMP/source.tgz" -C .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "The source is unchanged."; else git commit -q -m "Source of version ${tag#v}"; git push -q; echo "Source of $tag is in the repository."; fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "fresh=yes" >> "$GITHUB_OUTPUT"
+  windows:
+    name: Build the Windows download from this repository's source
+    needs: source
+    if: needs.source.outputs.fresh == 'yes'
+    permissions:
+      contents: read          # building needs only to read the code
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Build the helper from its source
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          New-Item -ItemType Directory -Force native | Out-Null
+          & $csc /nologo /optimize /target:exe /platform:x64 /out:native\agd-helper.exe /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Xml.dll helper\AgdHelper.cs
+          if ($LASTEXITCODE -ne 0) { throw "The helper didn't compile." }
+      - name: Build aGoldenDiagnose.exe
+        shell: bash
+        working-directory: desktop
+        env:
+          TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          rm -rf web && cp -r ../web web
+          echo '{"token":""}' > update-config.json
+          npm pkg set version="${TAG#v}.0"
+          npm install
+          npm run dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows
+          path: desktop/dist/aGoldenDiagnose.exe
+          if-no-files-found: error
+          retention-days: 1
+  linux:
+    name: Build the Linux download from this repository's source
+    needs: source
+    if: needs.source.outputs.fresh == 'yes'
+    permissions:
+      contents: read          # building needs only to read the code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Build aGoldenDiagnose.AppImage
+        shell: bash
+        working-directory: desktop
+        env:
+          TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          rm -rf web && cp -r ../web web
+          echo '{"token":""}' > update-config.json
+          mkdir -p native
+          npm pkg set version="${TAG#v}.0"
+          npm install
+          npm run dist:linux
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux
+          path: desktop/dist/aGoldenDiagnose.AppImage
+          if-no-files-found: error
+          retention-days: 1
+  release:
+    name: Release both downloads
+    needs: [source, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write          # to sign the attestations below
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: out
+      - name: Put the two files side by side
+        shell: bash
+        run: |
+          cp out/windows/aGoldenDiagnose.exe aGoldenDiagnose.exe
+          cp out/linux/aGoldenDiagnose.AppImage aGoldenDiagnose.AppImage
+      # A signed record, kept by GitHub, saying these exact files were built by this workflow from this repository's code.
+      # Anyone can check a download with:  gh attestation verify <file> -R SirGoldenTaco/agoldendiagnose-app
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            aGoldenDiagnose.exe
+            aGoldenDiagnose.AppImage
+      # Optional: a VirusTotal scan of both files, when the repository has a VT_API_KEY secret. Only the two public files are sent.
+      - name: Send both files to VirusTotal
+        id: vt
+        shell: bash
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          if [ -z "${VT_API_KEY:-}" ]; then echo "No VirusTotal key on this repository: skipped."; echo "done=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          ok=yes
+          for f in aGoldenDiagnose.exe aGoldenDiagnose.AppImage; do
+            url=$(curl -fsS -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data) || { ok=no; continue; }
+            curl -fsS -H "x-apikey: $VT_API_KEY" -F "file=@$f" "$url" > /dev/null && echo "$f sent." || { ok=no; echo "$f couldn't be sent."; }
+          done
+          echo "done=$ok" >> "$GITHUB_OUTPUT"
+      - name: Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.source.outputs.tag }}
+          COMMIT: ${{ needs.source.outputs.commit }}
+          VT: ${{ steps.vt.outputs.done }}
+        run: |
+          sumW=$(sha256sum aGoldenDiagnose.exe | cut -d' ' -f1); sumL=$(sha256sum aGoldenDiagnose.AppImage | cut -d' ' -f1)
+          commit="$COMMIT"
+          # what changed: this version's part of the changelog, then the files that changed since the release before,
+          # taken from the code itself, with a link to the line-by-line differences
+          prev=$(gh release list -L 20 --exclude-drafts --json tagName,createdAt -q 'sort_by(.createdAt) | reverse | .[].tagName' -R "$GITHUB_REPOSITORY" | grep -vx "$TAG" | head -n 1 || true)
+          log=$(awk -v v="${TAG#v}" 'index($0, "## " v " ") == 1 || $0 == "## " v { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md 2>/dev/null | sed -e '/./,$!d' || true)
+          {
+            echo "## What changed"
+            echo
+            if [ -n "$log" ]; then echo "$log"; else echo "No changelog entry was written for this version. The exact changes are below."; fi
+            echo
+            if [ -n "$prev" ] && git rev-parse -q --verify "refs/tags/$prev" >/dev/null; then
+              echo "<details><summary>Files changed since ${prev#v} (from the code itself)</summary>"
+              echo
+              echo '```'
+              git diff --stat=120 "$prev" "$commit" -- . ':(exclude).github' | sed 's/ *$//'
+              echo '```'
+              echo "</details>"
+              echo
+              echo "Line-by-line differences: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$prev...$TAG"
+              echo
+            fi
+            echo "## Download"
+            echo
+            echo "- **Windows:** download **aGoldenDiagnose.exe** and run it (nothing to install). If Windows says the publisher is unknown, choose More info, then Run anyway."
+            echo "- **Linux:** download **aGoldenDiagnose.AppImage**, allow it to run as a program (\`chmod +x aGoldenDiagnose.AppImage\`), and start it. See the README if it needs FUSE 2."
+            echo
+            echo "Both were built by GitHub from this repository's source at commit \`${commit:0:7}\`: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "SHA-256:"
+            echo "- \`aGoldenDiagnose.exe\`: \`$sumW\`"
+            echo "- \`aGoldenDiagnose.AppImage\`: \`$sumL\`"
+            echo
+            echo "**Check that a download is really from this code:** both files carry a build attestation signed by GitHub. With the GitHub command-line tool: \`gh attestation verify aGoldenDiagnose.exe -R $GITHUB_REPOSITORY\` (or \`aGoldenDiagnose.AppImage\`). Attestations: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/attestations"
+            if [ "$VT" = "yes" ]; then
+              echo
+              echo "**Virus scans** (VirusTotal, about 70 antivirus engines; the results appear a few minutes after release):"
+              echo "- aGoldenDiagnose.exe: https://www.virustotal.com/gui/file/$sumW"
+              echo "- aGoldenDiagnose.AppImage: https://www.virustotal.com/gui/file/$sumL"
+              echo
+              echo "A few engines sometimes flag apps built with Electron as a single file. If one does, the attestation above shows the file is the one built from this code."
+            fi
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+          gh release create "$TAG" aGoldenDiagnose.exe aGoldenDiagnose.AppImage -R "$GITHUB_REPOSITORY" --target "$commit" --title "aGoldenDiagnose ${TAG#v}" --latest --notes-file notes.md
+          # only the 3 newest downloads are kept; the tags of older versions stay, so their code and the differences stay readable
+          gh release list -L 100 --exclude-drafts --json tagName,createdAt -q 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' -R "$GITHUB_REPOSITORY" |
+          while read -r t; do [ -n "$t" ] && gh release delete "$t" --yes -R "$GITHUB_REPOSITORY" || true; done
+  # A release made before the VirusTotal key existed (or when sending failed) gets its scan afterwards: the same two files,
+  # downloaded from the release, are sent and the links are added to the release notes.
+  scan:
+    name: Virus scan of the newest release, if it has none yet
+    needs: source
+    if: needs.source.outputs.fresh == 'no'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VT_API_KEY:-}" ]; then echo "No VirusTotal key on this repository: nothing to do."; exit 0; fi
+          tag=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true); [ -n "$tag" ] || exit 0
+          body=$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json body -q .body)
+          if echo "$body" | grep -q "virustotal.com"; then echo "$tag already has its scan."; exit 0; fi
+          mkdir -p files && cd files
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p aGoldenDiagnose.exe -p aGoldenDiagnose.AppImage
+          ok=yes
+          for f in aGoldenDiagnose.exe aGoldenDiagnose.AppImage; do
+            url=$(curl -fsS -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data) || { ok=no; continue; }
+            curl -fsS -H "x-apikey: $VT_API_KEY" -F "file=@$f" "$url" > /dev/null && echo "$f sent." || { ok=no; echo "$f couldn't be sent."; }
+          done
+          [ "$ok" = "yes" ] || { echo "Not every file could be sent: trying again next hour."; exit 0; }
+          sumW=$(sha256sum aGoldenDiagnose.exe | cut -d' ' -f1); sumL=$(sha256sum aGoldenDiagnose.AppImage | cut -d' ' -f1)
+          {
+            printf '%s\n\n' "$body"
+            echo "**Virus scans** (VirusTotal, about 70 antivirus engines; the results appear a few minutes after the files were sent):"
+            echo "- aGoldenDiagnose.exe: https://www.virustotal.com/gui/file/$sumW"
+            echo "- aGoldenDiagnose.AppImage: https://www.virustotal.com/gui/file/$sumL"
+            echo
+            echo "A few engines sometimes flag apps built with Electron as a single file. If one does, the attestation above shows the file is the one built from this code."
+          } > ../notes.md
+          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --notes-file ../notes.md
+          echo "$tag: scan links added."

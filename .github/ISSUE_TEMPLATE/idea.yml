@@ -1,0 +1,12 @@
+name: An idea
+description: Something aGoldenDiagnose could do or explain better
+body:
+  - type: markdown
+    attributes:
+      value: "Everything here is public: please don't include personal details."
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea, and what it would help with
+    validations:
+      required: true
