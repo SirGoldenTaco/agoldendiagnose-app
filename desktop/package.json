@@ -1,0 +1,81 @@
+{
+  "name": "agoldendiagnose",
+  "productName": "aGoldenDiagnose",
+  "version": "1.0.0",
+  "description": "aGoldenDiagnose: watches your games and gathers everything about a crash into one report",
+  "author": "aGolden",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.agolden.diagnose",
+    "productName": "aGoldenDiagnose",
+    "files": [
+      "single.js",
+      "main.js",
+      "preload.js",
+      "tray.js",
+      "watch.js",
+      "pc.js",
+      "linux-helper.js",
+      "linux-runs.js",
+      "autostart.js",
+      "icon.png",
+      "update-config.json",
+      "web/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "aGoldenDiagnose.exe",
+      "unpackDirName": "aGoldenDiagnose"
+    },
+    "extraResources": [
+      {
+        "from": "native",
+        "to": "native"
+      }
+    ],
+    "asarUnpack": [
+      "linux-helper.js"
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png",
+      "category": "Utility",
+      "artifactName": "aGoldenDiagnose.AppImage",
+      "synopsis": "Watches your games and gathers everything about a crash into one report",
+      "syncDesktopName": true
+    },
+    "publish": null,
+    "copyright": "aGoldenDiagnose"
+  },
+  "desktopName": "aGoldenDiagnose.desktop"
+}

@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>aGoldenDiagnose</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .tabs{display:flex;gap:6px;margin:0 0 12px}
+  .tabs button{flex:1;background:var(--card);color:var(--dim);border:1px solid var(--line);font-weight:600;padding:10px 6px}
+  .tabs button.on{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
+  .sw{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .sw:last-child{border-bottom:0}
+  .sw .t{flex:1;font-size:15px}
+  .sw .t small{display:block;color:var(--dim);font-size:12.5px;margin-top:2px}
+  .tg{position:relative;width:46px;height:26px;flex:0 0 auto}
+  .tg input{opacity:0;width:100%;height:100%;margin:0;cursor:pointer;position:absolute;z-index:1}
+  .tg i{position:absolute;inset:0;background:var(--line,#2c3038);border-radius:999px;transition:background .15s}
+  .tg i::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:var(--dim,#9aa1ad);transition:transform .15s,background .15s}
+  .tg input:checked+i{background:rgba(227,179,65,.35)}
+  .tg input:checked+i::after{transform:translateX(20px);background:var(--gold)}
+  .sec{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);margin:16px 2px 6px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chips button{background:transparent;border:1px solid var(--line);color:var(--text);font-weight:500;padding:6px 11px;font-size:13.5px;border-radius:999px}
+  .chips button.on{border-color:var(--gold);color:var(--gold)}
+  .sws{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .sws button{width:30px;height:30px;padding:0;border-radius:50%;border:2px solid var(--line)}
+  .sws button.on{border-color:var(--gold);box-shadow:0 0 0 2px rgba(227,179,65,.35)}
+  .sws input[type=color]{width:34px;height:32px;padding:0;border:0;background:none;cursor:pointer}
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;max-width:92vw;background:var(--card,#1e2127);border:1px solid var(--gold);color:var(--text);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  #toast.bad{border-color:var(--bad)}
+  html{scrollbar-color:rgba(227,179,65,.45) transparent}
+  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:rgba(227,179,65,.4);border-radius:8px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:rgba(227,179,65,.7);background-clip:padding-box;border:2px solid transparent}::-webkit-scrollbar-track{background:transparent}
+  .grow{flex:1 1 auto}
+  .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:10px;font-size:14px;flex-wrap:wrap}
+  .banner .dot{width:10px;height:10px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(86,211,100,.6);animation:pulse 2s infinite}.banner.bad .dot{background:var(--bad);animation:none}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(86,211,100,0)}100%{box-shadow:0 0 0 0 rgba(86,211,100,0)}}
+  .g{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+  .g.run{border-color:var(--gold)}
+  .g .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.g .nm{font-size:17px;font-weight:700}.g .exe{color:var(--dim);font-size:12.5px}
+  .g .live{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .pill{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--card2);color:var(--dim)}.pill b{color:var(--text);font-weight:700}
+  .pill.hot{border-color:var(--bad);color:var(--bad)}
+  .g .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  .badge{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .k-crash,.k-gpu,.k-pc{color:var(--bad);border-color:rgba(255,123,114,.5)}.k-oom,.k-vram,.k-hang,.k-error,.k-start{color:var(--gold);border-color:rgba(227,179,65,.5)}.k-normal{color:var(--good);border-color:rgba(86,211,100,.4)}
+  .rrow{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:8px;cursor:pointer;text-align:left;width:100%;color:inherit;font:inherit}
+  .rrow:hover{border-color:var(--gold)}.rrow .t{flex:1;min-width:0}.rrow .t b{display:block}.rrow .t small{color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .verdict{border:1px solid var(--line);border-left:5px solid var(--gold);border-radius:14px;padding:16px;background:var(--card)}
+  .verdict.is-bad{border-left-color:var(--bad)}.verdict.is-ok{border-left-color:var(--good)}
+  .verdict h3{margin:0 0 6px;font-size:22px}.verdict p{margin:0;line-height:1.5}
+  .facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:12px}
+  .fact{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px}.fact small{display:block;color:var(--dim);font-size:12px}.fact b{font-size:14px;word-break:break-word}
+  .tips{margin:8px 0 0;padding-left:20px;line-height:1.55}.tips li{margin-bottom:5px}
+  .find{border-left:3px solid var(--line);padding:6px 0 6px 12px;margin:8px 0}.find.s-bad{border-color:var(--bad)}.find.s-warn{border-color:var(--gold)}.find b{display:block}.find span{color:var(--dim);font-size:14px;line-height:1.45}
+  #chart{width:100%;height:260px;display:block;background:var(--well,#0d0f12);border:1px solid var(--line);border-radius:12px}
+  .legend{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.legend button{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:4px 10px;border-radius:999px}.legend button i{width:10px;height:10px;border-radius:50%;display:inline-block}.legend button.off{opacity:.4}
+  .sub{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 8px}
+  .hit{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;padding:6px 8px;border-radius:8px;background:var(--well,#0d0f12);border:1px solid var(--line);margin-bottom:5px;white-space:pre-wrap;word-break:break-word;cursor:pointer}
+  .hit small{color:var(--dim);font-family:inherit}
+  .ev{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:var(--card)}.ev.l1,.ev.l2{border-left:4px solid var(--bad)}.ev.l3{border-left:4px solid var(--gold)}
+  .ev summary{cursor:pointer;font-size:14px}.ev pre{white-space:pre-wrap;word-break:break-word;font-size:12.5px;color:var(--dim);margin:8px 0 0}
+  .frow{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.frow:last-child{border-bottom:0}.frow .t{flex:1;min-width:0}.frow .t small{display:block;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #viewer{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;padding:12px;gap:8px}#viewer[hidden]{display:none}
+  #viewText{flex:1;overflow:auto;background:var(--well,#0d0f12);border:1px solid var(--line);border-radius:12px;padding:10px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;margin:0}
+  #viewText .e{background:rgba(255,123,114,.16);display:block;border-left:3px solid var(--bad);padding-left:6px;margin-left:-9px}
+  #viewText mark{background:var(--gold);color:#1b1503}
+  table.kv2{width:100%;border-collapse:collapse;font-size:14px}table.kv2 td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}table.kv2 td:first-child{color:var(--dim);width:34%}
+  #ai{white-space:pre-wrap;line-height:1.5}
+  #picker{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:14px}#picker[hidden]{display:none}
+  #picker{box-sizing:border-box}
+  #picker .box{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:680px;width:100%;max-height:100%;box-sizing:border-box;display:flex;flex-direction:column;padding:16px}      /* never taller than the window (at any text size), so the list inside scrolls */
+  #pickList{flex:1 1 auto;min-height:0;overflow-y:auto;margin-top:10px;padding-right:4px}
+  /* A narrow window (or a large text size, which narrows it the same way): things that sat side by side get their own
+     full-width lines and buttons line up in two equal columns, instead of wrapping wherever they happen to break.
+     Measured on the section itself, so the app's text size counts. */
+  #tab-games,#tab-rep,#tab-set,#tab-pc{container-type:inline-size}
+  @container (max-width:520px){
+    .banner{display:grid;grid-template-columns:auto 1fr;gap:8px 10px}
+    .banner .grow{display:none}
+    .banner button{grid-column:1/-1;width:100%}
+    .g .top .grow{display:none}
+    .g .top .exe{flex:1 1 100%;order:3}
+    .g .acts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+    .g .acts button{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:6px;padding-right:6px}
+    .g .acts .grow{display:none}
+    .g .acts>*{width:100%;text-align:center;justify-content:center;margin:0}
+    .g .acts>:first-child{grid-column:1/-1}
+    .rrow{flex-direction:column;align-items:flex-start;gap:6px}
+    .rrow .t{width:100%}
+    .rrow .t small{white-space:normal}
+    .frow{flex-wrap:wrap}
+    .frow .t{flex:1 1 100%}
+    .frow button{flex:1}
+    #tab-set .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+    #tab-set .row>.grow,#tab-set .row>input,#tab-set .row>select{grid-column:1/-1;width:100%}
+    #tab-set .sw{flex-wrap:wrap}
+    #tab-set .sw .chips{flex:1 1 100%}
+  }
+  /* the games drop-down on the Reports tab: one line, with a search box inside */
+  .dd{position:relative;width:min(100%,420px)}
+  .ddhead{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-weight:600;text-align:left;cursor:pointer}
+  .dd.open .ddhead,.ddhead:hover{border-color:var(--gold)}
+  .ddname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ddnum,.ddopt .c{flex:none;font-size:12px;font-weight:700;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .ddcaret{flex:none;color:var(--gold);transition:transform .15s}.dd.open .ddcaret{transform:rotate(180deg)}
+  .ddpanel{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);background:var(--card);border:1px solid var(--gold);border-radius:12px;padding:8px;box-shadow:0 14px 34px rgba(0,0,0,.55)}
+  .ddsearch{width:100%;box-sizing:border-box;margin-bottom:6px}
+  .ddlist{max-height:min(50vh,340px);overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+  .ddopt{display:flex;align-items:center;gap:10px;width:100%;background:transparent;color:var(--text);border:0;border-radius:8px;padding:8px 10px;font-weight:500;text-align:left;cursor:pointer}
+  .ddopt:hover{background:var(--card2)}.ddopt.on{background:rgba(227,179,65,.16);color:var(--gold)}
+  .ddopt .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ddnone{color:var(--dim);padding:10px;font-size:14px}
+  /* the PC tab */
+  .pctiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px}
+  .pctile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+  .pctile .lbl,.topcol .lbl{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
+  .pctile .big{font-size:28px;font-weight:800;line-height:1.15;margin-top:2px}
+  .pctile .sub{font-size:12.5px;color:var(--dim);min-height:1.3em;overflow-wrap:anywhere}
+  .pctile.warn{border-color:rgba(227,179,65,.6)}.pctile.warn .big{color:var(--gold)}
+  .pctile.bad{border-color:rgba(255,123,114,.6)}.pctile.bad .big{color:var(--bad)}
+  .pctile.good .big{color:var(--good)}
+  canvas.spark{display:block;width:100%;height:44px;margin-top:6px}
+  .drv{display:grid;grid-template-columns:minmax(90px,170px) 1fr auto;gap:10px;align-items:center;padding:6px 0}
+  .drv b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drv small{color:var(--dim);white-space:nowrap}
+  .drv .bar{height:9px;border-radius:999px;background:var(--line,#2c3038);overflow:hidden}.drv .bar i{display:block;height:100%;background:var(--gold);border-radius:999px}
+  .drv.warn .bar i{background:#f0883e}.drv.bad .bar i{background:var(--bad)}
+  .pctop{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .toprow{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:14px}.toprow .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.toprow .v{color:var(--dim);white-space:nowrap}
+  .b-bad{color:var(--bad);border-color:rgba(255,123,114,.5)}.b-warn{color:var(--gold);border-color:rgba(227,179,65,.5)}.b-ok{color:var(--good);border-color:rgba(86,211,100,.4)}
+  .inc{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:6px;background:var(--card2)}
+  .inc.s-bad{border-left-color:var(--bad)}.inc.s-warn{border-left-color:var(--gold)}.inc.open{background:rgba(255,123,114,.08)}
+  .inc summary{cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.inc summary small{color:var(--dim);margin-left:auto}
+  .inc p{margin:8px 0 4px;line-height:1.5}
+  .hrow{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.hrow:last-child{border-bottom:0}
+  .hrow .t{flex:1;min-width:0}.hrow .t small{display:block;color:var(--dim);font-size:12px}.hrow .t p{margin:4px 0 0;line-height:1.5;color:var(--dim);overflow-wrap:anywhere}.hrow .t p.tip{color:var(--text)}
+  .hrow .badge{flex:none;min-width:62px;text-align:center}
+  .okbox{margin-top:8px}.okbox summary{cursor:pointer;color:var(--dim);padding:6px 0}
+  #pcHead.is-bad{border-color:rgba(255,123,114,.6)}
+  @container (max-width:520px){ .drv{grid-template-columns:1fr auto}.drv .bar{grid-column:1/-1;order:3} .inc summary small{margin-left:0;flex:1 1 100%} .hrow{flex-direction:column;gap:4px} }
+  /* Fixes from the web */
+  .fixrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .fixrow .t{flex:1 1 220px;min-width:0}.fixrow .t small{display:block;color:var(--dim);font-size:12px}.fixrow .t b{font-weight:600;overflow-wrap:anywhere}
+  a.chiplink{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--gold);text-decoration:none;font-size:13px;font-weight:600}
+  a.chiplink:hover{border-color:var(--gold)}
+  .fixtext{white-space:pre-wrap;line-height:1.5;user-select:text}
+  #fixOut a{color:var(--gold)}
+</style>
+<script>/* AMOLED: on a phone the dark background becomes pure black (those pixels switch off) */if(/Android/i.test(navigator.userAgent))document.documentElement.classList.add("amoled")</script><style>html.amoled{--bg:#000;--card:#0c0d10;--card2:#15171b}html.amoled,html.amoled body{background-color:#000}</style>
+<!-- UI standard: the same settings rows, section headings, inner-screen Back and Display card. -->
+<style id="ag-std">
+.sec{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold,#e3b341);margin:16px 2px 6px}
+.card>.sec:first-child{margin-top:0}
+h2{color:var(--gold,#e3b341)}
+.ag-row{display:flex;align-items:center;gap:12px;padding:10px 0;flex-wrap:wrap}
+.ag-row .ag-t{flex:1;min-width:180px;font-size:15px}
+.ag-row .ag-t small{display:block;color:var(--dim,#9aa1ad);font-size:12.5px;margin-top:2px}
+/* on/off rows written as <label class="toggle"><input type=checkbox> text <span class="dim">detail</span></label> look like the rows above: text on the left, switch on the right */
+label.toggle{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;column-gap:12px!important;gap:0 12px!important;margin:0!important;padding:10px 0!important;border-bottom:1px solid var(--line,#2c3038);font-size:15px;color:var(--text,#eceef2);cursor:pointer}
+label.toggle:last-child{border-bottom:0}
+label.toggle>input[type=checkbox]{grid-column:2!important;grid-row:1/span 4!important;-webkit-appearance:none!important;appearance:none!important;width:46px!important;height:26px!important;border-radius:999px;background:#2c3038;position:relative;margin:0!important;cursor:pointer;transition:background .15s;flex:0 0 auto;accent-color:auto}
+label.toggle>input[type=checkbox]::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#9aa1ad;transition:transform .15s,background .15s}
+label.toggle>input[type=checkbox]:checked{background:rgba(227,179,65,.35)}
+label.toggle>input[type=checkbox]:checked::after{transform:translateX(20px)!important;background:var(--gold,#e3b341)}
+label.toggle>input[type=checkbox]:disabled{opacity:.45;cursor:default}
+label.toggle>.dim,label.toggle>small{grid-column:1;display:block;font-size:12.5px;color:var(--dim,#9aa1ad);margin-top:2px}
+/* an inner screen: "← Back" on the left, its name beside it */
+.subhead{display:flex;align-items:center;gap:10px;margin:0 0 12px;min-width:0}
+.subhead>b,.subhead>.t{flex:1;min-width:0;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the Display card in Settings */
+#textsize-slot .agts{margin:0!important;padding:6px 10px}
+#textsize-slot .agts>span:first-child{display:none}
+#textsize-slot .agts{background:transparent!important;border-color:var(--line,#2c3038)!important}
+#textsize-slot .agts .v{color:var(--text,var(--fg,#eceef2))!important}
+/* Themes: Settings → Display → Theme (Dark, Light, AMOLED). */
+html[data-agtheme=light]:not(.ag-own){color-scheme:light;--bg:#f3f4f6;--card:#ffffff;--card2:#eceef2;--line:#d3d8df;--text:#1b1f25;--fg:#1b1f25;--dim:#5b6370;--muted:#5b6370;--gold:#8c6400;--gold2:#a87a0e;--gold-ink:#ffffff;--ink:#ffffff;--bad:#c22b2b;--good:#1a7f37;--ok:#1a7f37;--warn:#8a5a00;--surface:#ffffff;--panel:#ffffff;--panel2:#eceef2;--well:#f7f8fa}
+html[data-agtheme=dark]:not(.ag-own),html[data-agtheme=amoled]:not(.ag-own){color-scheme:dark}
+html[data-agtheme=amoled]:not(.ag-own){--bg:#000;--card:#0c0d10;--card2:#15171b;--line:#24282f;--surface:#0c0d10;--panel:#0c0d10;--panel2:#15171b;--well:#000}
+html[data-agtheme],html[data-agtheme] body{background-color:var(--bg)}
+html[data-agtheme=light] body{color:var(--text,var(--fg))}
+html[data-agtheme=light]:not(.ag-own) input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),html[data-agtheme=light]:not(.ag-own) select,html[data-agtheme=light]:not(.ag-own) textarea{background-color:#fff!important;color:#1b1f25!important;border-color:#c9ced6!important}
+html[data-agtheme=light] label.toggle>input[type=checkbox]{background:#c9ced6}
+html[data-agtheme=light] label.toggle>input[type=checkbox]::after{background:#fff;box-shadow:0 1px 2px #0003}
+html[data-agtheme=light] label.toggle>input[type=checkbox]:checked{background:rgba(140,100,0,.35)}
+html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
+.agth{display:inline-flex;border:1px solid var(--line,#2c3038);border-radius:8px;overflow:hidden;flex:0 0 auto}
+.agth>button{background:transparent!important;color:var(--text,var(--fg,#eceef2))!important;border:0!important;border-radius:0!important;margin:0!important;padding:7px 13px!important;font:inherit;font-size:14px!important;font-weight:600;cursor:pointer;min-width:0;width:auto!important;box-shadow:none!important}
+.agth>button+button{border-left:1px solid var(--line,#2c3038)!important}
+.agth>button.on{background:var(--gold,var(--accent,#e3b341))!important;color:var(--gold-ink,var(--ink,var(--on-accent,#1b1503)))!important}
+</style>
+<script id="ag-std-js">
+/* Back (the phone's Back button, the Esc key): close the inner screen that's open,
+ * otherwise go to the first tab, otherwise leave the app (the phone does that when this answers false). */
+(function () {
+  function seen(e) { return !!(e && e.offsetParent !== null && !e.disabled); }
+  function backBtn() { var b = document.querySelectorAll("[data-back]"); for (var i = b.length - 1; i >= 0; i--) if (seen(b[i])) return b[i]; return null; }
+  window.agBack = function () {
+    var own = [window.__agBack, window.__agcBack, window.__agmBack];
+    for (var i = 0; i < own.length; i++) if (typeof own[i] === "function") { try { if (own[i]()) return true; } catch (e) {} }
+    var b = backBtn(); if (b) { b.click(); return true; }
+    var tabs = [].filter.call(document.querySelectorAll("#tabs>button, #agTabs>button, .tabs>button, nav.tabs>button, #tabs>[data-tab]"), seen);
+    if (tabs.length > 1) {
+      var on = tabs.filter(function (t) { return t.classList.contains("on") || t.classList.contains("active") || t.getAttribute("aria-selected") === "true"; })[0];
+      if (on && on !== tabs[0]) { tabs[0].click(); return true; }
+    }
+    return false;
+  };
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    var t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) && t.value) return;
+    var b = backBtn(); if (b) { e.preventDefault(); b.click(); }
+  });
+})();
+/* Theme: Dark, Light or AMOLED (pure black, for phone screens). Phones start on AMOLED, PCs on Dark. */
+(function () {
+  var KEY = "agolden-theme", NAMES = { dark: "Dark", light: "Light", amoled: "AMOLED" };
+  var phone = /Android/i.test(navigator.userAgent);
+  function get() { var t = ""; try { t = localStorage.getItem(KEY) || ""; } catch (e) {} return NAMES[t] ? t : (phone ? "amoled" : "dark"); }
+  function apply(t) {
+    var h = document.documentElement;
+    h.setAttribute("data-agtheme", t);
+    h.classList.toggle("amoled", t === "amoled");
+    if (h.classList.contains("ag-own")) h.setAttribute("data-theme", t === "light" ? "light" : "dark");
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", t === "light" ? "#f3f4f6" : t === "amoled" ? "#000000" : "#14161a");
+    var b = document.querySelectorAll(".agth>button"); for (var i = 0; i < b.length; i++) b[i].classList.toggle("on", b[i].getAttribute("data-t") === t);
+    bars(t);
+  }
+  /* on Android the phone's status and navigation bars take the page's background, with dark or light icons to match */
+  function bars(t) {
+    if (!window.agAndroid || !agAndroid.theme) return;
+    var go = function () { try { agAndroid.theme(t + "|" + getComputedStyle(document.body).backgroundColor); } catch (e) {} };
+    if (document.body) setTimeout(go, 0); else document.addEventListener("DOMContentLoaded", go);
+  }
+  window.agTheme = { get: get, set: function (t) { if (!NAMES[t]) return; try { localStorage.setItem(KEY, t); } catch (e) {} apply(t); } };
+  apply(get());
+  function picker() {
+    var g = document.createElement("div"); g.className = "agth"; g.setAttribute("role", "group"); g.setAttribute("aria-label", "Theme");
+    ["dark", "light", "amoled"].forEach(function (t) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = NAMES[t]; b.setAttribute("data-t", t);
+      if (t === get()) b.className = "on";
+      b.onclick = function () { agTheme.set(t); }; g.appendChild(b);
+    });
+    return g;
+  }
+  /* the Theme row goes right under the Text size row of the Settings page (built now or later by the app) */
+  function mount() {
+    if (document.getElementById("ag-theme")) return;
+    var own = document.getElementById("theme-slot");
+    if (own) { var w = picker(); w.id = "ag-theme"; own.appendChild(w); return; }
+    var slot = document.getElementById("textsize-slot"); if (!slot || !slot.parentNode) return;
+    var row = slot.parentNode; if (!row.classList.contains("ag-row") && !row.classList.contains("setrow")) return;
+    var r = document.createElement(row.tagName); r.className = row.className; r.id = "ag-theme";
+    if (row.classList.contains("ag-row")) { var t = document.createElement("div"); t.className = "ag-t"; t.innerHTML = "Theme<small>AMOLED is pure black: on a phone screen those pixels switch off.</small>"; r.appendChild(t); }
+    else { var s = document.createElement("span"); s.textContent = /^fr/i.test(document.documentElement.lang || "") ? "Thème" : "Theme"; r.appendChild(s); }
+    r.appendChild(picker()); row.parentNode.insertBefore(r, row.nextSibling);
+  }
+  function watch() { mount(); try { new MutationObserver(mount).observe(document.body, { childList: true, subtree: true }); } catch (e) {} }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watch); else watch();
+})();
+</script>
+</head>
+<body>
+<div id="upd"></div>
+<h1><span>a<b>Golden</b>Diagnose</span><span class="who" id="who"></span></h1>
+
+<div class="tabs" id="tabs">
+  <button type="button" data-tab="games" class="on">Games</button>
+  <button type="button" data-tab="rep">Reports</button>
+  <button type="button" data-tab="pc">PC</button>
+  <button type="button" data-tab="set">Settings</button>
+</div>
+
+<section id="tab-games">
+  <div class="banner" id="banner"><span class="dot"></span><span id="bannerText">Starting…</span><span class="grow"></span><button type="button" class="ghost small" id="bAddRun">Add a running game</button><button type="button" class="ghost small" id="bAddExe">Add a game's .exe</button></div>
+  <div id="games"></div>
+  <div class="empty" id="gamesMsg" hidden>No game has been seen yet. Start one: games from Steam, Epic, GOG, Xbox, EA, Ubisoft and Riot folders are picked up by themselves. Any other game can be added with the buttons above.</div>
+  <div class="card" id="ignoredCard" hidden><button type="button" id="ignoredHead" aria-expanded="false" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;color:var(--gold);font-weight:700"><span id="ignoredArrow" style="display:inline-block;transition:transform .15s">▸</span><span id="ignoredTitle">Hidden</span></button><div id="ignoredBody" hidden><div class="kv" style="margin-top:6px">Removed from the list and not watched. Their reports are kept.</div><div id="ignored"></div></div></div>
+  <div class="kv" style="margin-top:10px">aGoldenDiagnose only watches from the outside, the way Task Manager does. It puts nothing inside the game, so anti-cheat has nothing to object to.</div>
+</section>
+
+<section id="tab-rep" hidden>
+  <div id="repList">
+    <div id="repFilter" style="margin-bottom:10px"></div>
+    <div id="reports"></div>
+    <div class="empty" id="repMsg" hidden>No reports yet. One is made by itself when a watched game crashes, freezes, or ends with an error.</div>
+  </div>
+  <div id="repView" hidden></div>
+</section>
+
+<section id="tab-pc" hidden>
+  <div class="empty" id="pcOff" hidden>Watching the PC is turned off. <button type="button" class="small" id="pcTurnOn" style="margin-left:8px">Turn it on</button></div>
+  <div id="pcBody">
+    <div class="banner" id="pcHead"><span class="dot" id="pcDot"></span><span id="pcLine" class="grow">…</span><button type="button" class="ghost small" id="pcCheckAdmin" title="Runs the check with administrator rights (one Windows prompt). Only needed to read a drive's own health: wear, temperature and errors.">Deep check (as administrator)</button><button type="button" id="pcCheck">Check my PC</button></div>
+    <div id="pcTiles" class="pctiles"></div>
+    <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Drives</div><div id="pcDrives"></div><div class="sec">Right now</div><div id="pcTop" class="pctop"></div><div class="kv" id="pcUp" style="margin-top:8px"></div></div>
+    <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Check my PC</div><div id="pcHealth"></div></div>
+    <div class="card" style="margin-top:10px">
+      <div class="row"><div class="sec grow" style="margin:0">What went wrong</div><button type="button" class="ghost small" id="pcFolder" title="One readable log file per day, and each Check my PC result">Open the logs folder</button><button type="button" class="ghost small" id="pcClear" hidden>Clear the list</button></div>
+      <div class="kv" style="margin:6px 0 10px">Written down by itself when it happens: the internet or the router dropping, memory filling up, the graphics card overheating, a drive filling up or giving errors, blue screens, sudden shutdowns, hardware errors, and programs crashing.</div>
+      <div id="pcInc"></div><div class="empty" id="pcIncNone">Nothing has gone wrong since the watching started.</div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-set" hidden>
+  <div class="card">
+    <div class="sec" style="margin-top:0">PC and internet</div>
+    <div class="sw"><div class="t">Watch my PC<small>Processor, memory, graphics card, drives, and what Windows writes in its event log. Problems are written down on the PC tab.</small></div><label class="tg"><input type="checkbox" id="pOn"><i></i></label></div>
+    <div class="sw"><div class="t">Watch my internet<small>Every 10 seconds: does the router answer, does the internet answer, do names resolve. Uses a few bytes each time.</small></div><label class="tg"><input type="checkbox" id="pNet"><i></i></label></div>
+    <div class="sw"><div class="t">Tell me when something goes wrong<small>A Windows notification for problems and warnings.</small></div><label class="tg"><input type="checkbox" id="pNotify"><i></i></label></div>
+    <div class="sw"><div class="t">Memory counts as almost full at<small>For a minute or more.</small></div><div class="chips" id="pRam"></div></div>
+    <div class="sw"><div class="t">The graphics card counts as too hot at<small>For 30 seconds or more (NVIDIA cards; others don't report it).</small></div><div class="chips" id="pGt"></div></div>
+    <div class="sec">Keeping it running</div>
+    <div class="sw"><div class="t">Keep alive<small>If the app is ended from Task Manager or crashes, it starts itself again within seconds, hidden next to the clock. It also opens when you sign in to Windows. Only its own Quit stops it.</small></div><label class="tg"><input type="checkbox" id="pKeep"><i></i></label></div>
+    <div class="sw"><div class="t">Ask before quitting<small>Quit from the icon next to the clock asks first, so it isn't closed by accident.</small></div><label class="tg"><input type="checkbox" id="pAsk"><i></i></label></div>
+  </div>
+  <div class="card">
+    <div class="sec" style="margin-top:0">Watching</div>
+    <div class="sw"><div class="t">Watch games from my launchers by themselves<small>Anything started from a Steam, Epic, GOG, Xbox, EA, Ubisoft, Rockstar or Riot games folder. Off: only the games on the Games tab.</small></div><label class="tg"><input type="checkbox" id="oAuto"><i></i></label></div>
+    <div class="sw"><div class="t">Start with Windows<small>Opens hidden next to the clock, so games are watched without thinking about it.</small></div><label class="tg"><input type="checkbox" id="oStartup"><i></i></label></div>
+    <div class="sw"><div class="t">Tell me when a report is ready<small>A Windows notification when a game crashed and its report was built.</small></div><label class="tg"><input type="checkbox" id="oNotify"><i></i></label></div>
+    <div class="sw"><div class="t">How often to measure<small>What the game uses (CPU, memory, graphics card) is noted this often while it runs.</small></div><div class="chips" id="oInterval"></div></div>
+    <div class="sec">Reports</div>
+    <div class="sw"><div class="t">Keep a report when a game closes normally too<small>Off: only crashes, freezes and error exits are kept.</small></div><label class="tg"><input type="checkbox" id="oNormal"><i></i></label></div>
+    <div class="sw"><div class="t">Reports kept per game<small>Older ones are removed by themselves.</small></div><div class="chips" id="oKeep"></div></div>
+    <div class="row" style="margin-top:8px"><button type="button" class="ghost small" id="bFolder">Open the reports folder</button></div>
+  </div>
+  <div class="card" id="linuxCard" style="display:none">
+    <div class="sec" style="margin-top:0">Linux</div>
+    <div class="sw"><div class="t">Steam launch option<small>Linux hides how a game ended from outside programs. Put this in a game's launch options in Steam (Properties › General › Launch options) and the report gets the game's real exit code and everything it printed. It works while aGoldenDiagnose is closed too: the report is made the next time it opens.</small></div><button type="button" class="ghost small" id="lxRun">Copy the launch option</button></div>
+    <div class="sw"><div class="t">Proton's own log, for games started that way<small>Proton writes a detailed log of each run, which is added to the report. It can slow a game down and grow large, so it is off until you turn it on.</small></div><label class="tg"><input type="checkbox" id="lxProton"><i></i></label></div>
+    <div class="sw"><div class="t">Show in the applications menu<small>Adds aGoldenDiagnose to your desktop's applications menu (one small file in ~/.local/share/applications). Off removes it.</small></div><label class="tg"><input type="checkbox" id="lxMenu"><i></i></label></div>
+    <div class="kv" id="lxMsg" style="margin-top:8px;overflow-wrap:anywhere"></div>
+  </div>
+  <div class="card">
+    <div class="sec" style="margin-top:0">AI</div>
+    <div class="kv">With your Claude API key, a report gets an "Explain with Claude" button: Claude reads the summary and the important log lines and explains the crash and what to try, in plain words.</div>
+    <div class="row" style="margin-top:10px"><input type="password" id="aiKey" placeholder="Claude API key (sk-ant-…)" autocomplete="off" spellcheck="false" style="flex:1 1 220px"><select id="aiModel" style="flex:0 1 200px"><option value="claude-sonnet-5-5">Sonnet 5.5 (recommended)</option><option value="claude-haiku-5-5">Haiku 5.5 (cheapest)</option><option value="claude-opus-5-5">Opus 5.5 (deepest)</option></select></div>
+    <div class="kv" style="margin-top:8px">The key stays on this PC and is sent only to api.anthropic.com, together with the report's text when you press the button.</div>
+    <label class="toggle" id="aiSrvWrap" style="margin-top:8px" hidden><input type="checkbox" id="aiSrv"> Use Claude through my sync server <span class="dim">No key needed on this PC: your server keeps the key and a monthly budget. Needs the Sync sign-in below.</span></label>
+    <label class="toggle" style="margin-top:8px"><input type="checkbox" id="aiLocal"> Explain with a local AI model instead <span class="dim">Free and private: the report never leaves this PC. Needs Ollama (ollama.com) running on this PC with the model below downloaded (for example: ollama pull qwen3:32b). "Find fixes" still uses Claude, since it searches the web.</span></label>
+    <div class="row" id="aiLocalRow" style="margin-top:6px"><input type="text" id="aiLocalModel" placeholder="Model (qwen3:32b)" spellcheck="false" style="flex:1 1 160px"><input type="text" id="aiLocalUrl" placeholder="http://127.0.0.1:11434" spellcheck="false" style="flex:1 1 200px"></div>
+  </div>
+  <div class="card">
+    <div class="sec" style="margin-top:0">Sync</div>
+    <div class="kv">Sign in to your sync server: the games list and the hidden list are kept on your server, so they are the same on every PC and come back after a reinstall. Reports stay on this PC.</div>
+    <div id="syIn" class="row" style="margin-top:10px"><input type="text" id="syUser" placeholder="Username" autocomplete="username" spellcheck="false" style="flex:1 1 150px"><input type="password" id="syPass" placeholder="Password" autocomplete="current-password" style="flex:1 1 150px"><button type="button" id="syGo">Sign in</button></div>
+    <details id="sySrvBox" style="margin-top:8px"><summary class="kv" style="cursor:pointer">Server</summary><input type="text" id="sySrv" spellcheck="false" style="width:100%;margin-top:6px"></details>
+    <div id="syOut" class="row" style="margin-top:10px" hidden><span id="syWho" class="grow"></span><button type="button" class="ghost small" id="syNow">Sync now</button><button type="button" class="ghost small" id="syBye">Sign out</button></div>
+    <div class="kv" id="syMsg" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><div class="sec">Display</div><div class="ag-row"><div class="ag-t">Text size<small>Click the percentage to go back to 100%. On a PC, Ctrl + mouse wheel also changes it.</small></div><div id="textsize-slot"></div></div></div>
+</section>
+
+<div id="picker" hidden><div class="box"><div class="row"><b style="font-size:17px">Which one is the game?</b><span class="grow"></span><button type="button" class="ghost small" id="pickClose">Close</button></div><div class="kv">Programs with a window open right now. Likely games are first. Hide the ones you never want to see here.</div><div id="pickList"></div></div></div>
+<div id="viewer" hidden><div class="row"><button type="button" class="ghost" id="viewBack" data-back>← Back</button><b id="viewName" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b><input type="search" id="viewFind" placeholder="Find in this file" style="flex:0 1 240px"><button type="button" class="ghost small" id="viewErr">Next error</button></div><pre id="viewText"></pre></div>
+<div id="toast" hidden></div>
+<script>window.APPCFG = { name: "aGoldenDiagnose", key: "agoldendiagnose", server: "", share: true, updates: true };</script>
+<script src="common.js"></script>
+<script src="analyze.js"></script>
+<script src="diagnose.js"></script>
+<script src="pc.js"></script>
+<script>
+/* On Linux the screens use the Linux words (the system log, the system tray, sign-in…) and hide the Windows-only buttons.
+ * Text taken from your files (log lines, file contents) is left exactly as it is. */
+(function () {
+  var UA = navigator.userAgent; if (!/Electron/.test(UA) || !/Linux/.test(UA) || /Android/i.test(UA) || !window.Diagnose) return;
+  document.documentElement.setAttribute("data-os", "linux");
+  var W = window.Diagnose.linuxWords, SKIP = { PRE: 1, CODE: 1, TEXTAREA: 1, INPUT: 1, SCRIPT: 1, STYLE: 1 };
+  function keep(n) { for (var e = n.parentNode; e && e.nodeType === 1; e = e.parentNode) { if (SKIP[e.tagName] || (e.classList && (e.classList.contains("hit") || e.classList.contains("raw")))) return true; } return false; }
+  function fix(root) {
+    if (root.nodeType === 3) { if (!keep(root)) { var t = W(root.nodeValue); if (t !== root.nodeValue) root.nodeValue = t; } return; }
+    if (root.nodeType !== 1 || SKIP[root.tagName]) return;
+    if (root.title) root.title = W(root.title);
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, list = []; while ((n = w.nextNode())) list.push(n);
+    for (var i = 0; i < list.length; i++) fix(list[i]);
+  }
+  var deep = document.getElementById("pcCheckAdmin");          // on Linux the deep check asks for your password once (pkexec) and reads the drives with smartctl
+  if (deep) { deep.textContent = "Deep check (asks for your password)"; deep.title = "Reads each drive's own health (wear, temperature, errors) with smartctl, after one password prompt from your system. Needs the smartmontools package. It only reads."; }
+  var N = window.native && window.native.diag, card = document.getElementById("linuxCard"), $ = function (id) { return document.getElementById(id); };
+  if (card && N && N.linux) {
+    card.style.display = "";
+    var msg = function (t) { $("lxMsg").textContent = t || ""; };
+    N.linux("state").then(function (s) { if (!s || !s.ok) return; $("lxProton").checked = !!s.proton; $("lxMenu").checked = !!s.menu; if (s.script) msg("Launch option: " + s.option); });
+    $("lxRun").onclick = function () { N.linux("setup").then(function (r) { if (!r || !r.ok) { msg((r && r.error) || "It couldn't be set up."); return; } (window.native.copyText ? window.native.copyText(r.option) : Promise.resolve()).then(function () { msg("Copied. Paste it into the game's launch options in Steam: " + r.option + "   (The script it starts is a plain text file you can read: " + r.file + ")"); }); }); };
+    $("lxProton").onchange = function () { var on = this.checked; N.linux("proton", { on: on }).then(function (s) { if (!s || !s.ok) { $("lxProton").checked = !on; msg((s && s.error) || ""); } }); };
+    $("lxMenu").onchange = function () { var on = this.checked; N.linux("menu", { on: on }).then(function (s) { if (!s || !s.ok) { $("lxMenu").checked = !on; msg((s && s.error) || ""); } }); };
+  }
+  fix(document.body);
+  new MutationObserver(function (ms) { for (var i = 0; i < ms.length; i++) { var m = ms[i]; if (m.type === "characterData") fix(m.target); else for (var j = 0; j < m.addedNodes.length; j++) fix(m.addedNodes[j]); } }).observe(document.body, { childList: true, subtree: true, characterData: true });
+})();
+</script>
+<!-- Text size: Ctrl + / Ctrl - / Ctrl 0, Ctrl + mouse wheel, and the A− A+ buttons. -->
+<style>
+.agts{display:flex;align-items:center;justify-content:center;gap:10px;margin:18px auto 14px;padding:8px 12px;font:600 13px/1.2 system-ui,sans-serif;color:#b9ad95;width:max-content;max-width:100%;border:1px solid rgba(227,179,65,.22);border-radius:999px;background:rgba(227,179,65,.06)}
+.agts button{all:unset;cursor:pointer;min-width:34px;height:30px;padding:0 8px;border-radius:999px;text-align:center;font-weight:800;color:#17120b;background:linear-gradient(#f6cd70,#d49a3e)}
+.agts button:active{transform:scale(.95)}.agts .v{min-width:44px;text-align:center;color:#f3ecdc}
+.agts-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483647;padding:8px 16px;border-radius:999px;background:#17120bee;color:#f6cd70;border:1px solid #96702e;font:700 14px system-ui,sans-serif;pointer-events:none;opacity:0;transition:opacity .2s}
+</style>
+<script>
+(function () {
+  var KEY = "agolden-textsize", STEPS = [0.75, 0.85, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8], z = 1, toastT = 0;
+  try { z = parseFloat(localStorage.getItem(KEY)) || 1; } catch (e) {}
+  function idx() { var b = 0; for (var i = 0; i < STEPS.length; i++) if (Math.abs(STEPS[i] - z) < Math.abs(STEPS[b] - z)) b = i; return b; }
+  function apply(say) {
+    document.documentElement.style.zoom = z;
+    try { localStorage.setItem(KEY, z); } catch (e) {}
+    var v = document.querySelectorAll(".agts .v");
+    for (var i = 0; i < v.length; i++) v[i].textContent = Math.round(z * 100) + "%";
+    if (say && document.body) {
+      var t = document.querySelector(".agts-toast");
+      if (!t) { t = document.createElement("div"); t.className = "agts-toast"; document.body.appendChild(t); }
+      t.textContent = "Text size " + Math.round(z * 100) + "%"; t.style.opacity = 1;
+      clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; }, 1200);
+    }
+  }
+  function step(d) { z = d === 0 ? 1 : STEPS[Math.max(0, Math.min(STEPS.length - 1, idx() + d))]; apply(true); }
+  window.agTextSize = { bigger: function () { step(1); }, smaller: function () { step(-1); }, reset: function () { step(0); },
+    key: function (k) { var d = k === "+" || k === "=" ? 1 : k === "-" || k === "_" ? -1 : k === "0" ? 0 : null; if (d === null) return; if (window.agZoomKey && window.agZoomKey(d)) return; step(d); } };
+  document.addEventListener("keydown", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    var k = e.key, c = e.code;
+    var d = k === "+" || k === "=" || c === "NumpadAdd" ? 1 : k === "-" || k === "_" || c === "NumpadSubtract" ? -1 : k === "0" || c === "Numpad0" ? 0 : null;
+    if (d === null) return;
+    e.preventDefault();
+    if (window.agZoomKey && window.agZoomKey(d)) return;        // a meme is open: zoom the picture instead
+    step(d);
+  }, true);
+  var wheelAt = 0;
+  window.addEventListener("wheel", function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    if (window.agZoomWheel && window.agZoomWheel(e)) return;    // a meme is open: zoom the picture instead
+    var now = Date.now(); if (now - wheelAt < 90) return; wheelAt = now;
+    step(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false, capture: true });
+  function bar() {
+    if (document.querySelector(".agts")) return;
+    var d = document.createElement("div"); d.className = "agts";
+    d.innerHTML = '<span>Text size</span><button type="button" aria-label="Smaller text">A−</button><span class="v"></span><button type="button" aria-label="Bigger text">A+</button>';
+    var b = d.querySelectorAll("button");
+    b[0].onclick = function () { step(-1); }; b[1].onclick = function () { step(1); };
+    d.querySelector(".v").onclick = function () { step(0); }; d.querySelector(".v").title = "Back to 100%";
+    var slot = document.getElementById("textsize-slot") || document.getElementById("settings") || document.body;
+    slot.appendChild(d);
+    apply(false);
+  }
+  apply(false);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bar); else bar();
+})();
+</script>
+
+<!-- Name bar: the app's name, version and platform in the top-left corner of the window. -->
+<script data-agname="aGoldenDiagnose">
+(function () {
+  var NAME = document.currentScript.getAttribute("data-agname"), ICON = "data:image/png;base64,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", ver = "";
+  var UA = navigator.userAgent, PLAT = /Android/i.test(UA) ? "Android" : (/Electron|Neutralino/i.test(UA) || window.NL_OS) && /Linux/.test(UA) ? "Linux" : /Electron|Neutralino/i.test(UA) || window.NL_OS ? "Windows" : "Web";
+  function place(d) {                       // into the window's corner, whatever column the page itself is laid out in
+    // the row is as wide as the window; the app's text size (page zoom) is undone here, or it runs off the right edge
+    var z = 1, e; for (e = d.parentNode; e && e.nodeType === 1; e = e.parentNode) z *= parseFloat(getComputedStyle(e).zoom) || 1;
+    d.style.width = Math.max(200, window.innerWidth / z - 20) + "px";
+    d.style.marginLeft = "0"; d.style.marginTop = "0";
+    var r = d.getBoundingClientRect(), top = r.top + (window.scrollY || 0);
+    // how far one pixel of margin moves it on screen: not 1 when the text size isn't 100% (the row then slid off to the left)
+    d.style.marginLeft = "-100px"; var k = (r.left - d.getBoundingClientRect().left) / 100; if (!(k > 0.2 && k < 5)) k = 1;
+    d.style.marginLeft = ((10 - r.left) / k) + "px"; d.style.marginTop = ((8 - top) / k) + "px";
+  }
+  /* the same top row in every app: name and version on the left; Settings and Check for updates on the right.
+     The app's own copies are moved here, and what's left of the box they sat in (an empty card, a repeat of the
+     name) is hidden. */
+  function topRow(d) {
+    var right = d.querySelector(".agr"); if (!right) return;
+    var L = document.querySelectorAll("button"), i, b, t, moved = false;
+    for (i = 0; i < L.length; i++) {
+      b = L[i]; if (d.contains(b) || b.getAttribute("data-agtop")) continue;
+      t = b.textContent.replace(/\s+/g, " ").trim();
+      var isUpd = /^check for updates$/i.test(t) || /^(rechercher|vérifier) les mises à jour$/i.test(t), isSet = /^⚙\s*(settings|paramètres|réglages)$/i.test(t);
+      if (!isUpd && !isSet) continue;
+      if (b.closest("#editor,#vEdit,dialog,.modal,[role=dialog]")) continue;
+      var from = b.parentNode; b.setAttribute("data-agtop", "1");
+      b.style.cssText += ";margin:0;font:600 13px/1.2 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:7px 12px;border-radius:9px;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.45);cursor:pointer;width:auto;min-width:0;box-shadow:none";
+      // a page that redraws makes a new button: the old copy up here goes
+      var old = right.querySelectorAll("button[data-agkind=" + (isUpd ? "u" : "s") + "]"); for (var o = 0; o < old.length; o++) if (!document.body.contains(old[o]) || old[o] !== b) old[o].remove();
+      b.setAttribute("data-agkind", isUpd ? "u" : "s");
+      if (isSet) right.insertBefore(b, right.firstChild); else right.appendChild(b);
+      if (isUpd) {                                   // its status line goes with it
+        var st = document.getElementById("updMsg") || document.getElementById("updStatus") || (from && from.querySelector && from.querySelector("span[id]:not(#verbar)"));
+        if (st && !d.contains(st) && !st.querySelector("button,input")) { st.style.cssText += ";font:600 12px/1.3 system-ui,sans-serif;opacity:.75;color:inherit;max-width:42vw"; right.insertBefore(st, b); }
+      }
+      if (from) leftovers.push(from);
+      moved = true;
+    }
+    // the boxes the buttons left: hidden once nothing visible is left in them (a version line the bar shows already goes too)
+    for (var q = 0; q < leftovers.length; q++) {
+      for (var k = 0, e = leftovers[q]; e && e !== document.body && k < 3; k++, e = e.parentNode) {
+        if (e.style.display === "none") break;
+        var live = false, C = e.querySelectorAll("button,input,select,textarea,img,svg,canvas,video");
+        for (var c = 0; c < C.length && !live; c++) if (C[c].offsetParent !== null || C[c].getClientRects().length) live = true;
+        if (live) break;
+        var txt = (e.innerText || "").replace(/\s+/g, " ").trim();
+        if (!txt || new RegExp("^" + NAME + "( web| \\d[\\d.]*| \\?)?( ·.*)?$", "i").test(txt) || /^version \?/i.test(txt)) e.style.display = "none"; else break;
+      }
+    }
+    return moved;
+  }
+  var leftovers = [];
+  function scan(d) {
+    var L = document.querySelectorAll("h1"), i, e, m, t;
+    for (i = 0; i < L.length; i++) { e = L[i];    // the page's own copy of the name, when it is nothing but the name
+      var ctl = "button,input,select,a,label", k, c;
+      if (e.textContent.replace(/\s+/g, "") === NAME && !e.querySelector(ctl)) { e.style.display = "none"; continue; }
+      for (k = 0; k < e.children.length; k++) { c = e.children[k];     // a title row that also holds buttons: only the name goes
+        if (c.textContent.replace(/\s+/g, "") === NAME && !c.matches(ctl)) { c.style.display = "none"; e.style.justifyContent = "flex-end"; } } }
+    // the version, from wherever the app already shows it; that copy is then taken away so it isn't shown twice
+    var re = new RegExp("^" + NAME + "\\s+v?(\\d+(?:\\.\\d+)+)\\s*(?:·\\s*)?(.*)$"), rest, par;
+    L = document.querySelectorAll("span,small,div,p,b,footer");
+    for (i = 0; i < L.length; i++) { e = L[i]; if (e.children.length || d.contains(e)) continue; t = e.textContent.trim(); if (!t || t.length > 160) continue;
+      m = re.exec(t); rest = m ? m[2] : "";
+      if (!m && /^(foot|verTop|ver|version)$/.test(e.id)) { m = /^v(?:ersion)?\s*(\d+(?:\.\d+)+)$/i.exec(t); rest = ""; }
+      if (!m) continue;
+      ver = m[1].replace(/\.0$/, "");
+      if (rest) { e.textContent = rest.charAt(0).toUpperCase() + rest.slice(1); if (e.style.display === "none") { e.style.display = ""; if (e.parentNode && e.parentNode.style) e.parentNode.style.display = ""; } }
+      else { e.style.display = "none"; par = e.parentNode; if (par && par !== document.body && par.children.length === 1 && !par.textContent.replace(e.textContent, "").trim()) par.style.display = "none"; } }
+    if (ver) { d.querySelector(".agv").textContent = "v" + ver; d.querySelector(".agv").style.display = ""; }
+  }
+  function bar() {
+    if (!document.body || document.getElementById("agname")) return;
+    var d = document.createElement("div"); d.id = "agname";
+    d.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:8px;box-sizing:border-box;padding-right:10px;padding:0 0 10px;font:800 18px/1.2 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;letter-spacing:.1px;color:#f3ecdc;position:relative;z-index:2";
+    var m = /^(a)(Golden)(.*)$/.exec(NAME) || ["", NAME, "", ""];
+    d.innerHTML = '<img alt="" width="24" height="24" style="border-radius:6px;display:block"><span>' + m[1] + '<span style="color:#e3b341">' + m[2] + '</span>' + m[3] + '</span>' +
+      '<span class="agv" style="display:none;font-size:12px;font-weight:700;color:#e3b341;border:1px solid rgba(227,179,65,.45);border-radius:999px;padding:2px 8px"></span>' +
+      '<span style="font-size:12px;font-weight:600;color:inherit;opacity:.7">' + PLAT + '</span>' +
+      '<span class="agr" style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap"></span>';
+    d.firstChild.src = ICON;
+    if (getComputedStyle(document.body).backgroundColor.replace(/[^\d,]/g, "").split(",").slice(0, 3).reduce(function (a, b) { return a + +b; }, 0) > 450) d.style.color = "#17120b";   // a light page
+    document.body.insertBefore(d, document.body.firstChild);
+    place(d); scan(d); topRow(d);
+    window.addEventListener("resize", function () { place(d); });
+    new MutationObserver(function () { place(d); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });   // text size changed
+    var t = 0;
+    new MutationObserver(function () { if (t) return; t = setTimeout(function () { t = 0; scan(d); topRow(d); if (document.body.firstChild !== d) document.body.insertBefore(d, document.body.firstChild); place(d); }, 150); })
+      .observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bar); else bar();
+})();
+</script>
+</body>
+</html>
