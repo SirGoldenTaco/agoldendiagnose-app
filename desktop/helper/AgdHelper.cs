@@ -494,6 +494,7 @@ static class Program {
       case "dump": try { return Dump(S(c, "path")); } catch (Exception e) { return D("ok", false, "error", e.Message); }
       case "sysinfo": return D("ok", true, "info", SysInfo());
       case "pc": return D("ok", true, "pc", Pc(L(c, "top", 0) != 0));
+      case "temps": return (Dictionary<string, object>)Temps();
       case "net": return D("ok", true, "net", NetCheck(A(c, "hosts").Select(x => Convert.ToString(x)).ToList(), S(c, "name")));
       case "keepalive": kaExe = S(c, "exe"); kaOn = L(c, "on", 0) != 0; return D("ok", true);
       case "modules": return (Dictionary<string, object>)Modules((int)L(c, "pid", 0));
@@ -550,6 +551,58 @@ static class Program {
     }
     return r;
   }
+  // ------------------------------------------------------------------ temperatures Windows gives without a driver
+  // Each drive's own sensor (the storage "temperature" query, Windows 10 and later: no administrator rights needed for
+  // NVMe and most SATA drives), and the motherboard's ACPI thermal zones (a performance counter; many desktops only
+  // report a fixed value there). The processor's own sensor needs a driver, so it isn't read here.
+  static class TW {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DeviceIoControl(IntPtr h, uint code, byte[] inBuf, int inSize, byte[] outBuf, int outSize, out int ret, IntPtr ov);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+  }
+  static byte[] StorageQuery(IntPtr h, int property) {
+    var q = new byte[12]; BitConverter.GetBytes(property).CopyTo(q, 0);      // PropertyId, QueryType 0 (standard)
+    var o = new byte[4096]; int n;
+    return TW.DeviceIoControl(h, 0x2D1400, q, q.Length, o, o.Length, out n, IntPtr.Zero) && n >= 8 ? o : null;
+  }
+  static string AsciiAt(byte[] b, int off) { if (off <= 0 || off >= b.Length) return ""; int e = off; while (e < b.Length && b[e] != 0) e++; return Encoding.ASCII.GetString(b, off, e - off).Trim(); }
+  static object Temps() {
+    var letters = new Dictionary<int, string>();
+    try {
+      foreach (var d in DriveInfo.GetDrives()) {
+        if (d.DriveType != DriveType.Fixed) continue;
+        IntPtr h = TW.CreateFile(@"\\.\" + d.Name.TrimEnd('\\'), 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero); if (h == new IntPtr(-1)) continue;
+        try { var o = new byte[12]; int n; if (TW.DeviceIoControl(h, 0x2D1080, null, 0, o, 12, out n, IntPtr.Zero) && n >= 8) { int num = BitConverter.ToInt32(o, 4); string l; letters.TryGetValue(num, out l); letters[num] = (l == null ? "" : l + " ") + d.Name.TrimEnd('\\'); } } finally { TW.CloseHandle(h); }
+      }
+    } catch { }
+    var drives = new List<object>();
+    for (int i = 0; i < 16; i++) {
+      IntPtr h = TW.CreateFile(@"\\.\PhysicalDrive" + i, 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+      if (h == new IntPtr(-1)) continue;
+      try {
+        string model = ""; var dd = StorageQuery(h, 0);                      // StorageDeviceProperty: the product name (never the serial number)
+        if (dd != null) { model = (AsciiAt(dd, BitConverter.ToInt32(dd, 12)) + " " + AsciiAt(dd, BitConverter.ToInt32(dd, 16))).Trim(); }
+        var t = StorageQuery(h, 52);                                         // StorageDeviceTemperatureProperty
+        if (t == null) continue;
+        int count = BitConverter.ToUInt16(t, 12); if (count < 1) continue;
+        short crit = BitConverter.ToInt16(t, 8), warn = BitConverter.ToInt16(t, 10), c = BitConverter.ToInt16(t, 26);
+        if (c <= 0 || c > 120) continue;
+        string l; letters.TryGetValue(i, out l);
+        drives.Add(D("n", "PhysicalDrive" + i, "model", model, "c", (int)c, "warn", warn > 0 && warn < 150 ? (int)warn : 0, "crit", crit > 0 && crit < 150 ? (int)crit : 0, "letters", l ?? ""));
+      } catch { } finally { TW.CloseHandle(h); }
+    }
+    var acpi = new List<object>();
+    try {
+      if (PerformanceCounterCategory.Exists("Thermal Zone Information")) {
+        var cat = new PerformanceCounterCategory("Thermal Zone Information");
+        foreach (string inst in cat.GetInstanceNames()) {
+          try { using (var pcn = new PerformanceCounter("Thermal Zone Information", "Temperature", inst, true)) { double k = pcn.NextValue(); if (k > 200 && k < 400) acpi.Add(D("name", inst, "c", Math.Round(k - 273.15, 1))); } } catch { }
+        }
+      }
+    } catch { }
+    return D("ok", true, "drives", drives, "acpi", acpi);
+  }
+
   // Is the internet there? Answers from the router, from two addresses on the internet, and from the name server (asked
   // directly with a small question, so Windows' own memory of names doesn't hide a name server that stopped answering).
   static double PingMs(string host, int timeout) {

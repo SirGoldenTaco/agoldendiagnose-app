@@ -32,8 +32,8 @@ const GB = (b) => (b / 1073741824).toFixed(b < 10737418240 ? 1 : 0) + " GB";
 const span = (ms) => { const s = Math.round(ms / 1000); return s < 90 ? s + " s" : s < 5400 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h"; };
 
 /* ---------------------------------------------------------------- what is kept */
-let DB = { incidents: [], lastEv: 0, daily: {}, health: null };
-function load() { try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(FILE(), "utf8"))); } catch {} if (!Array.isArray(DB.incidents)) DB.incidents = []; if (!DB.daily) DB.daily = {}; }
+let DB = { incidents: [], lastEv: 0, daily: {}, health: null, outages: [], ignore: {} };
+function load() { try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(FILE(), "utf8"))); } catch {} if (!Array.isArray(DB.incidents)) DB.incidents = []; if (!DB.daily) DB.daily = {}; if (!Array.isArray(DB.outages)) DB.outages = []; if (!DB.ignore || typeof DB.ignore !== "object") DB.ignore = {}; }
 let saveT = 0;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { fs.mkdirSync(path.dirname(FILE()), { recursive: true }); fs.writeFileSync(FILE(), JSON.stringify(DB)); } catch {} }, 400); }
 function logLine(t, text) { try { fs.mkdirSync(LOGDIR(), { recursive: true }); fs.appendFileSync(path.join(LOGDIR(), dayOf(t) + ".log"), timeOf(t) + "  " + String(text).replace(/\s*\n\s*/g, " | ") + "\r\n"); } catch {} }
@@ -64,6 +64,146 @@ function incident(kind, sev, title, detail, extra) {
 }
 function closeIncident(i, note) { if (!i || !i.open) return; i.open = false; i.end = Date.now(); if (note) i.detail += (i.detail ? " " : "") + note; save(); logLine(i.end, "OVER     " + i.title + " | lasted " + span(i.end - i.t)); X.alog("pc: over · " + i.title + " · lasted " + span(i.end - i.t)); X.tell("pc-update"); }
 const openOf = (kind) => DB.incidents.find((i) => i.open && i.kind === kind);
+/* The outage log, for the outage report: every time the connection was gone or unstable, with its start, its end and
+   which part was down. Kept apart from the incidents list (which keeps only the newest 400 of everything): ~3000 entries. */
+function outage(t, end, what) { DB.outages.unshift({ t, end, what }); if (DB.outages.length > 3000) DB.outages.length = 3000; save(); }
+function outagesBetween(from, to) {
+  const out = DB.outages.filter((o) => o.end >= from && o.t <= to).map((o) => Object.assign({}, o));
+  // from before this log existed: what the incidents list still remembers
+  for (const i of DB.incidents) {
+    if (i.kind !== "net" || !i.what) continue;
+    const t = i.what === "blip" ? i.t - (i.secs || 5) * 1000 : i.t, end = i.what === "blip" ? i.t : i.end || (i.open ? Date.now() : 0), what = i.what !== "blip" ? i.what : /router answered/.test(i.detail || "") ? "down" : /router stopped/.test(i.detail || "") ? "router" : /connection itself/.test(i.detail || "") ? "cable" : "blip";
+    if (!end || end < from || t > to || out.some((o) => Math.abs(o.t - t) < 20000)) continue;
+    out.push({ t, end, what, open: !!i.open });
+  }
+  const o = openOf("net"); if (o && o.what && !out.some((x) => Math.abs(x.t - o.t) < 20000)) out.push({ t: o.t, end: Date.now(), what: o.what, open: true });
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/* ---------------------------------------------------------------- temperatures
+ * The graphics card's comes from its driver (in the readings). The drives' own sensors and the motherboard's ACPI zone
+ * come from the watcher (Windows gives those without any driver). Windows has no standard way to read the processor's or
+ * the memory's temperature without installing a driver, so the app reads them from LibreHardwareMonitor (free, open
+ * source) when it runs with its web server on (Options → Remote Web Server → Run): only from 127.0.0.1:8085, this PC.
+ * On Linux they all come from the kernel's own sensors (/sys/class/hwmon). */
+const TEMP = { cpu: -1, cpuLabel: "", ram: -1, board: -1, boardLabel: "", src: "", drives: [], acpi: [], at: 0 };
+let lhmAt = 0, tempN = 0;
+const pickT = (list, prefer) => { if (!list.length) return null; for (const re of prefer) { const f = list.find(([n]) => re.test(n)); if (f) return f; } return list.reduce((a, b) => (b[1] > a[1] ? b : a)); };
+async function readLhm() {
+  if (Date.now() < lhmAt) return;
+  try {
+    const r = await fetch("http://127.0.0.1:8085/data.json", { signal: AbortSignal.timeout(1500) });
+    const j = await r.json(), got = { cpu: [], ram: [], board: [] };
+    const walk = (n, hw) => {
+      const img = String(n.ImageURL || ""), kind = /\bcpu\.png/i.test(img) ? "cpu" : /\bram\.png/i.test(img) ? "ram" : /mainboard\.png/i.test(img) ? "board" : /(nvidia|ati|amd|intel|hdd|nic|battery|fan)\.png/i.test(img) ? "" : hw;
+      const v = String(n.Value || "");
+      if (/°C\s*$/.test(v) && got[kind]) { const t = parseFloat(v.replace(",", ".")); if (t > 0 && t < 150) got[kind].push([String(n.Text || ""), t]); }
+      for (const c of n.Children || []) walk(c, kind);
+    };
+    walk(j, "");
+    const c = pickT(got.cpu, [/tctl|tdie/i, /package/i, /core average/i]), m = pickT(got.ram, [/^dimm/i]), b = pickT(got.board, [/^system/i, /motherboard/i, /systin/i]);
+    TEMP.cpu = c ? c[1] : -1; TEMP.cpuLabel = c ? c[0] : ""; TEMP.ram = got.ram.length ? Math.max(...got.ram.map((x) => x[1])) : -1; TEMP.board = b ? b[1] : -1; TEMP.boardLabel = b ? b[0] : "";
+    TEMP.src = "LibreHardwareMonitor"; lhmAt = Date.now() + 8000;
+  } catch { if (TEMP.src === "LibreHardwareMonitor") { TEMP.cpu = TEMP.ram = TEMP.board = -1; TEMP.src = ""; } lhmAt = Date.now() + 120000; }
+}
+function readHwmon() {          // Linux
+  const base = "/sys/class/hwmon", rd = (f) => { try { return fs.readFileSync(f, "utf8").trim(); } catch { return ""; } };
+  const cpu = [], ram = [], board = [], drives = [], acpi = [];
+  let dirs = []; try { dirs = fs.readdirSync(base); } catch {}
+  for (const d of dirs) {
+    const name = rd(path.join(base, d, "name")); let files = []; try { files = fs.readdirSync(path.join(base, d)).filter((f) => /^temp\d+_input$/.test(f)); } catch {}
+    const vals = files.map((f) => [rd(path.join(base, d, f.replace("_input", "_label"))) || name, +rd(path.join(base, d, f)) / 1000]).filter((x) => x[1] > 0 && x[1] < 150);
+    if (!vals.length) continue;
+    if (/k10temp|coretemp|zenpower|cpu_thermal/.test(name)) cpu.push(...vals);
+    else if (/spd5118|jc42/.test(name)) ram.push(...vals);
+    else if (/nvme|drivetemp/.test(name)) drives.push({ n: name + " " + drives.length, model: rd(path.join(base, d, "device", "model")) || name, c: Math.round(Math.max(...vals.map((x) => x[1]))), warn: 0, crit: 0, letters: "" });
+    else if (name === "acpitz") acpi.push({ name: "ACPI", c: vals[0][1] });
+    else if (/nct|it87|asus|f718|w83/.test(name)) board.push(...vals);
+  }
+  const c = pickT(cpu, [/tctl|tdie/i, /package/i]), b = pickT(board, [/systin|system|motherboard/i]);
+  Object.assign(TEMP, { cpu: c ? c[1] : -1, cpuLabel: c ? c[0] : "", ram: ram.length ? Math.max(...ram.map((x) => x[1])) : -1, board: b ? b[1] : -1, boardLabel: b ? b[0] : "", src: c ? "the kernel's sensors" : "", drives, acpi, at: Date.now() });
+}
+async function tempTick() {
+  if (LINUX) { readHwmon(); return; }
+  await readLhm();
+  if (tempN++ % 6 === 0) {                    // drives and the ACPI zone: every 30 s is plenty
+    const r = await X.ask("temps", {}, 8000);
+    if (r && r.ok) { TEMP.drives = r.drives || []; TEMP.acpi = r.acpi || []; }
+  }
+  TEMP.at = Date.now();
+}
+
+/* ---------------------------------------------------------------- after a drop: what was the network card doing?
+ * Reads (nothing is changed): the card in use and its driver, its power-saving settings, and what Windows wrote in its
+ * System log around the drop, plus how often the cable link went down in the last 7 days. Then turns that into what to try. */
+const NETDIAG_PS = (from, to) => `
+$o = @{}
+$a = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' } | Sort-Object -Property @{Expression={$_.LinkSpeed -match 'Gbps'};Descending=$true} | Select-Object -First 1
+if (-not $a) { $a = Get-NetAdapter -Physical | Sort-Object ifIndex | Select-Object -First 1 }
+if ($a) {
+  $o.adapter = @{ name = $a.Name; desc = $a.InterfaceDescription; speed = [string]$a.LinkSpeed; driver = [string]$a.DriverVersion; date = [string]$a.DriverDate; provider = [string]$a.DriverProvider; wifi = ($a.NdisPhysicalMedium -eq 9 -or $a.InterfaceDescription -match 'Wi-?Fi|Wireless|802\\.11') }
+  $o.settings = @(Get-NetAdapterAdvancedProperty -Name $a.Name | Where-Object { $_.DisplayName -match 'Energy|EEE|Green|Power Sav|Saving|Idle|Gigabit Lite|Speed|Duplex|Flow Control|Roaming|Wake on|Interrupt Moderation|Selective Suspend' } | ForEach-Object { @{ n = [string]$_.DisplayName; v = [string]$_.DisplayValue } })
+  $pm = Get-NetAdapterPowerManagement -Name $a.Name; if ($pm) { $o.allowOff = [string]$pm.AllowComputerToTurnOffDevice }
+}
+$re = 'e1[a-z]*express|e2f|e1i|rt6[0-9]+|rtl|realtek|intel|netwtw|netwlv|ndis|tcpip|dhcp|wlan|mlx|aqnic|aqtion|marvell|b57|killer|netadaptercx|ixgbe|igc|i225|i226|mediatek|qualcomm'
+$s = [DateTimeOffset]::FromUnixTimeMilliseconds(${from}).LocalDateTime; $e = [DateTimeOffset]::FromUnixTimeMilliseconds(${to}).LocalDateTime
+$ev = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = $s; EndTime = $e } -MaxEvents 400 | Where-Object { $_.ProviderName -match $re -or $_.Message -match 'network link|link (is )?(down|disconnected)|disconnected from the network|has begun resetting' } | Select-Object -First 25
+$o.events = @($ev | ForEach-Object { $m = ($_.Message -replace '\\s+', ' '); @{ t = ([DateTimeOffset]$_.TimeCreated).ToUnixTimeMilliseconds(); p = [string]$_.ProviderName; id = $_.Id; m = $m.Substring(0, [Math]::Min(260, $m.Length)) } })
+$wk = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = (Get-Date).AddDays(-7); Id = 27, 32, 10400, 10317, 4202, 7021 } -MaxEvents 500 | Where-Object { $_.ProviderName -match $re }
+$o.week = @{ down = @($wk | Where-Object { $_.Id -eq 27 -or $_.Message -match 'disconnect|link (is )?down' }).Count; resets = @($wk | Where-Object { $_.Id -eq 10400 -or $_.Message -match 'resetting' }).Count; all = @($wk).Count }
+$o | ConvertTo-Json -Depth 5 -Compress`;
+const isOn = (v) => !/^(off|disabled?|désactivé|aucun|none|0)$/i.test(String(v).trim());
+function netAdvice(what, d) {
+  const steps = [], found = [], ad = d.adapter || {}, set = d.settings || [], ev = d.events || [], wk = d.week || {};
+  if (ad.desc) found.push("Network card: " + ad.desc + (ad.speed ? ", linked at " + ad.speed : "") + (ad.driver ? ". Driver " + ad.driver + (ad.date ? " from " + String(ad.date).split(" ")[0] : "") : "") + ".");
+  let age = -1; { const t = Date.parse(ad.date); if (t) age = (Date.now() - t) / 86400000; }
+  const saving = set.filter((x) => /energy|eee|green|power sav|saving|gigabit lite|selective suspend/i.test(x.n) && !/wake/i.test(x.n) && isOn(x.v));
+  const speed = set.find((x) => /speed|duplex/i.test(x.n));
+  const linkDown = ev.filter((e) => /disconnect|link (is )?down|network link/i.test(e.m) || e.id === 27), resets = ev.filter((e) => /resetting/i.test(e.m) || e.id === 10400);
+  if (ev.length) found.push("Windows' log around the drop: " + ev.slice(0, 4).map((e) => e.p + " " + e.id + ": " + e.m.slice(0, 120)).join(" | "));
+  else if (d.events) found.push("Windows' log has nothing from the network card around the drop.");
+  if (wk.all != null) found.push("In the last 7 days the network card reported " + (wk.down || 0) + " link drop" + (wk.down === 1 ? "" : "s") + " and Windows reset it " + (wk.resets || 0) + " time" + (wk.resets === 1 ? "" : "s") + ".");
+  if (saving.length) found.push("Power saving is on in the card's settings: " + saving.map((x) => x.n + " = " + x.v).join(", ") + ".");
+  if (d.allowOff === "Enabled" || d.allowOff === "True") found.push("Windows is allowed to turn the card off to save power.");
+  if (what === "cable" || what === "blip-cable") {
+    if (saving.length) steps.push({ t: "Turn off the card's power saving (the most common cause of short drops)", s: ["Open Device Manager (right-click Start → Device Manager).", "Network adapters → double-click " + (ad.desc || "your network card") + " → Advanced tab.", ...saving.map((x) => "Set “" + x.n + "” to Disabled (it's " + x.v + " now)."), "Press OK. The connection blinks once while it applies."] });
+    if (d.allowOff === "Enabled" || d.allowOff === "True") steps.push({ t: "Stop Windows from turning the card off", s: ["Device Manager → Network adapters → " + (ad.desc || "your network card") + " → Power Management tab.", "Untick “Allow the computer to turn off this device to save power”, then OK."] });
+    if (resets.length || (wk.resets || 0) > 0 || (age > 365)) steps.push({ t: "Update the network card's driver", s: [(age > 0 ? "The driver is " + (age > 60 ? Math.round(age / 30) + " months" : Math.round(age) + " days") + " old. " : "") + "Get the newest one from the card's maker (" + (/realtek/i.test(ad.desc || "") ? "Realtek's site, “Network Interface Controllers” → your chip" : /intel/i.test(ad.desc || "") ? "Intel's Driver & Support Assistant" : /marvell|aqtion|aquantia/i.test(ad.desc || "") ? "Marvell's AQtion drivers page" : "or your motherboard's support page") + "), not from Windows Update.", "Install it, restart, and watch whether the drops stop."] });
+    if (!ad.wifi) steps.push({ t: "Check the cable and the router port", s: ["Reseat the cable at both ends until it clicks.", "Try another port on the router, and another cable." + (/(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 ? " At " + ad.speed + " use Cat 6 or better: an old Cat 5e cable can drop in and out at multi-gig speeds." : ""), "Look at the card's lights on the back of the PC when it drops: if they go out, it's the cable, the port or the card."] });
+    if (!ad.wifi && /(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 && speed) steps.push({ t: "If it keeps dropping, test at a lower link speed", s: ["Device Manager → " + (ad.desc || "your network card") + " → Advanced → “" + speed.n + "”.", "Pick 2.5 Gbps Full Duplex (or 1 Gbps) instead of Auto Negotiation, and see if the drops stop for a few days. Most internet plans don't need more than that."] });
+    if (ad.wifi) steps.push({ t: "Make the Wi-Fi steadier", s: ["Use the 5 GHz (or 6 GHz) network if the router has one, and keep the PC in sight of the router.", "Device Manager → your Wi-Fi card → Advanced: set “Roaming Aggressiveness” to Lowest if it's there.", "A cable is always steadier for games."] });
+  } else if (what === "router") {
+    steps.push({ t: "Look at the router", s: ["Did other devices lose the internet at the same time? If yes, it's the router; if only this PC, it's this PC's cable or card (see the steps for “the network connection itself dropped”).", "Restart the router, and make sure it isn't hot or covered.", "Update its firmware from its app or its web page.", "If it keeps happening, the router may be failing: the outage report shows how often."] });
+  } else {
+    steps.push({ t: "The problem was past your router: the modem or your internet provider", s: ["Restart the modem (unplug it for 30 seconds).", "Check the cable going into the modem from the wall (coax, fibre or phone line) is tight.", "Look for an outage on your provider's status page or app.", "If it keeps happening: PC tab → What went wrong → Outage report, and send it to your provider. It shows the router kept answering while the internet didn't, which means the problem is on their side of the modem."] });
+  }
+  if ((wk.down || 0) + (wk.resets || 0) >= 3 || DB.incidents.filter((i) => i.kind === "net" && Date.now() - i.t < 86400000).length >= 3) steps.push({ t: "Keep a record", s: ["PC tab → What went wrong → Outage report lists every drop with when and how long, ready to send to your provider or to keep while you try the steps above."] });
+  return { found, steps };
+}
+let netDiagBusy = null;
+async function netDiag(inc) {
+  if (!inc || inc.kind !== "net") return null;
+  if (netDiagBusy) await netDiagBusy.catch(() => {});
+  netDiagBusy = (async () => {
+    const what = inc.what === "blip" ? (/router answered/.test(inc.detail || "") ? "down" : /router stopped/.test(inc.detail || "") ? "router" : "cable") : inc.what;
+    const start = inc.what === "blip" ? inc.t - (inc.secs || 10) * 1000 : inc.t, end = inc.end || inc.t;
+    let d = {};
+    if (LINUX) {
+      const rd = (f) => { try { return fs.readFileSync(f, "utf8").trim(); } catch { return ""; } };
+      const nic = (cur.net && cur.net.adapter) || ""; if (nic) d = { adapter: { name: nic, desc: nic + (rd("/sys/class/net/" + nic + "/device/driver/module/drivers") ? "" : ""), speed: rd("/sys/class/net/" + nic + "/speed") ? rd("/sys/class/net/" + nic + "/speed") + " Mbps" : "", wifi: fs.existsSync("/sys/class/net/" + nic + "/wireless") }, week: { down: +rd("/sys/class/net/" + nic + "/carrier_down_count") || 0, resets: 0, all: 0 } };
+    } else {
+      const r = await powershell(NETDIAG_PS(start - 120000, end + 60000), 60000);
+      if (r && r.ok) d = r.data || {}; else d = { error: (r && r.error) || "no answer" };
+      for (const k of ["events", "settings"]) if (d[k] && !Array.isArray(d[k])) d[k] = [d[k]];
+    }
+    const adv = netAdvice(what, d);
+    inc.diag = { at: Date.now(), what, found: adv.found, steps: adv.steps, error: d.error || "" };
+    save(); X.tell("pc-update");
+    X.alog("pc: looked into a drop (" + what + "): " + adv.steps.map((x) => x.t).join(" / "));
+    return inc.diag;
+  })();
+  try { return await netDiagBusy; } finally { netDiagBusy = null; }
+}
 
 /* ---------------------------------------------------------------- the PC: readings and what counts as wrong */
 const hold = {};                 // how long a condition has been true, so a short spike isn't an incident
@@ -76,6 +216,9 @@ async function pcTick() {
   if (!r || !r.ok || !r.pc) { if (!pcTick.bad) { pcTick.bad = true; X.alog("pc readings: the watcher returned no reading (" + ((r && r.error) || (r && r.ok ? "no pc field" : "no answer")) + ")"); } return; }
   if (pcTick.bad) { pcTick.bad = false; X.alog("pc readings: working again"); }
   const p = r.pc, prev = cur.pc;
+  tempTick().catch(() => {});
+  if (TEMP.cpu > 0 && held("cputemp", TEMP.cpu >= 90, 4)) incident("cputemp", TEMP.cpu >= 95 ? "bad" : "warn", "The processor is very hot (" + Math.round(TEMP.cpu) + " °C)", "Processors slow themselves down near their limit (about 95 °C for most current ones, 89 °C for some X3D chips), which shows as stutter. Check the cooler is seated and its fans spin, clean the dust, and check the case airflow.");
+  for (const d of TEMP.drives || []) { const lim = d.warn > 0 ? d.warn : 70; if (d.c >= lim && DB.daily["dtemp:" + d.n] !== dayOf(Date.now())) { DB.daily["dtemp:" + d.n] = dayOf(Date.now()); incident("disktemp", "warn", "Drive " + (d.model || d.n) + " is hot (" + d.c + " °C)", "Its own limit for a warning is " + lim + " °C. Drives slow themselves down when hot. Give it airflow (an NVMe drive under the graphics card often needs its heatsink)."); } }
   if (!p.topCpu && prev) { p.topCpu = prev.topCpu; p.topMem = prev.topMem; p.procs = prev.procs; }
   if (prev && p.t > prev.t && p.rx >= prev.rx && p.tx >= prev.tx) { const dt = (p.t - prev.t) / 1000; cur.rate = { rx: (p.rx - prev.rx) / dt, tx: (p.tx - prev.tx) / dt }; }
   cur.pc = p;
@@ -134,14 +277,16 @@ async function netTick() {
     const b = netBlip; netBlip = null;
     if (netState === "ok" || netState === "slow" || netState === "dns" || netState === "unknown" || !netState) {
       const secs = Math.max(5, Math.round((n.t - b.t) / 1000) + 5);           // readings are 10 s apart: it started up to 10 s before the first miss
+      outage(n.t - secs * 1000, n.t, b.what);
       const where = b.what === "cable" ? "the network connection itself dropped (cable or Wi-Fi)" : b.what === "router" ? "the router stopped answering too" : "the router answered, the internet past it didn't (the modem or the provider)";
-      incident("net", "warn", "The internet dropped for about " + secs + " s", "It came back by itself: " + where + ". In a game that's a disconnect or a long freeze. Several of these in a day point to the modem, the router or the provider.", { what: "blip", secs });
+      const bi = incident("net", "warn", "The internet dropped for about " + secs + " s", "It came back by itself: " + where + ". In a game that's a disconnect or a long freeze. Several of these in a day point to the modem, the router or the provider.", { what: "blip", secs });
+      setTimeout(() => netDiag(bi).catch(() => {}), 2000);
     }
   }
   const need = want === "ok" ? 2 : want === "dns" ? 4 : want === "slow" ? 1 : 3;
   if (want !== netState && netWantN >= need) {
     const was = openOf("net");
-    if (was) closeIncident(was, want === "ok" ? "Back after " + span(Date.now() - was.t) + "." : "");
+    if (was) { closeIncident(was, want === "ok" ? "Back after " + span(Date.now() - was.t) + "." : ""); if (was.what) outage(was.t, was.end || Date.now(), was.what); if (/^(cable|router|down)$/.test(was.what)) setTimeout(() => netDiag(was).catch(() => {}), 2000); }
     netState = want; if (want === "ok" || want === "cable" || want === "down" || want === "router") netChanged = n.t;
     if (want !== "ok") { const [sev, title, text] = NET_TEXT[want]; incident("net", sev, title, text + (want === "slow" ? " Lost answers: " + n.loss + "%, reply time: " + (best > 0 ? best + " ms" : "none") + "." : ""), { open: true, what: want }); }
   }
@@ -189,8 +334,31 @@ function live() {
     on: S().on, netOn: S().net, helper: X.helperOk(), t: Date.now(),
     pc: p ? { cpu: p.cpu, cores: p.cores, ramTotal: p.ramTotal, ramFree: p.ramFree, commitTotal: p.commitTotal, commitFree: p.commitFree, gpu: p.gpu, vramMB: p.vramMB, vramTotalMB: p.vramTotalMB, gpuFan: p.gpuFan, gpuName: p.gpuName, gpuTemp: p.gpuTemp, gpuPower: p.gpuPower, drives: p.drives, nets: p.nets, upMs: p.upMs, procs: p.procs, topCpu: p.topCpu, topMem: p.topMem, rx: cur.rate.rx, tx: cur.rate.tx } : null,
     net: n ? { state: n.state || netState, link: n.link, adapter: n.adapter, wifi: n.wifi, mbps: n.mbps, gateway: n.gateway, gatewayMs: n.gatewayMs, dns: n.dns, dnsMs: n.dnsMs, pings: n.pings, best: n.best, loss: n.loss } : null,
+    temps: { cpu: TEMP.cpu, cpuLabel: TEMP.cpuLabel, ram: TEMP.ram, board: TEMP.board, boardLabel: TEMP.boardLabel, src: TEMP.src, drives: TEMP.drives, acpi: TEMP.acpi },
     chart: { pc: pcS.slice(-120).map((s) => [s.t, s.cpu, s.ram, s.gpu, s.gt, s.rx]), net: netS.slice(-120).map((s) => [s.t, s.in, s.gw]) },
   };
+}
+
+/* ---------------------------------------------------------------- one tile, in detail (the PC tab's tiles open this) */
+const DETAIL_KINDS = { cpu: ["cpu", "cputemp", "hardware", "bsod", "power"], ram: ["ram", "commit", "lowmem"], gpu: ["gputemp", "gpudrv"], net: ["net"], link: ["linkspeed", "net"] };
+let sysCache = null, sysAt = 0, adCache = null, adAt = 0;
+async function detail(which) {
+  const kinds = DETAIL_KINDS[which] || [];
+  if (!sysCache || Date.now() - sysAt > 600000) { const r = await X.ask("sysinfo", {}, 15000); if (r && r.ok) { sysCache = r.info; sysAt = Date.now(); } }
+  let incs = DB.incidents.filter((i) => kinds.includes(i.kind));
+  if (which === "link") incs = incs.filter((i) => i.kind === "linkspeed" || (i.diag && i.diag.what === "cable") || i.what === "cable");
+  // what Windows' own log says about it in the last 14 days (the same reading as "Check my PC")
+  let events = [];
+  const er = await X.ask("events", { from: Date.now() - 14 * 86400000, to: Date.now() }, 40000);
+  if (er && er.ok) events = (er.list || []).map((e) => ({ e, c: classify(e) })).filter((x) => x.c && kinds.includes(x.c[0])).slice(-30).reverse().map((x) => ({ t: x.e.t, kind: x.c[0], sev: x.c[1], title: x.c[2], text: String(x.c[3] || "").slice(0, 300), source: x.e.provider + " " + x.e.id }));
+  // the network card and its settings (for the Internet and Network pages)
+  let adapter = null;
+  if ((which === "net" || which === "link") && !LINUX) {
+    if (!adCache || Date.now() - adAt > 120000) { const r = await powershell(NETDIAG_PS(Date.now() - 60000, Date.now()), 45000); if (r && r.ok) { adCache = r.data; adAt = Date.now(); for (const k of ["settings"]) if (adCache[k] && !Array.isArray(adCache[k])) adCache[k] = [adCache[k]]; } }
+    adapter = adCache ? { adapter: adCache.adapter, settings: adCache.settings, allowOff: adCache.allowOff, week: adCache.week } : null;
+  }
+  const drops = which === "net" || which === "link" ? outagesBetween(Date.now() - 7 * 86400000, Date.now()) : [];
+  return { which, sys: sysCache, incidents: incs.slice(0, 40), events, adapter, drops, temps: live().temps };
 }
 
 /* ---------------------------------------------------------------- "Check my PC": a one-off look at its health */
@@ -278,11 +446,52 @@ async function linuxHealth(admin) {
   return { ok: true, data: o, elevated: !!(o.disks && o.disks.length) };
 }
 let checking = null;
+/* What to do about one "Check my PC" line: numbered steps, plain enough to follow. Null when there's nothing to do. */
+function healthSteps(it, c) {
+  const T = it.title, tip = it.tip || "", ok = it.sev === "ok";
+  if (ok) return null;
+  if (/blue-screen memory dump/.test(T)) return ["These are records of past blue screens. If none happened since the newest one, there is nothing to fix.", "To see what caused them: open them with WinDbg (free, from the Microsoft Store: File → Open dump file, then type !analyze -v) or BlueScreenView (NirSoft). The driver or module it names is the suspect.", "Once you're done with them, Disk Cleanup (as administrator) → “System error memory dump files” removes them."];
+  if (/blue screen/.test(T)) return ["Write down the stop code shown on the blue screen (or read it from the dump, see “blue-screen memory dumps”).", "Install Windows updates and the newest chipset and graphics drivers.", "Turn off overclocks and the memory profile (XMP / EXPO) in the BIOS for a few days: if the blue screens stop, that was it.", "Test the memory: Windows Memory Diagnostic (Start → “Windows Memory Diagnostic”) or MemTest86 from a USB stick."];
+  if (/without warning/.test(T)) return ["If you didn't hold the power button and the power didn't go out: watch the temperatures in the PC tab under load.", "A PC that cuts out in games often has a power supply that can't keep up: check its wattage against the graphics card's recommendation.", "Make sure every power cable to the graphics card is pushed in fully (no adapter bends near the plug).", "Update the BIOS if it's old (see the Hardware line)."];
+  if (/hardware error/.test(T)) return ["Turn off overclocks, undervolts and the memory profile (XMP / EXPO) in the BIOS for a test.", "Update the BIOS: many fixes for processor stability come that way.", "Watch the processor's temperature in the PC tab.", "If they continue at stock settings, test the memory with MemTest86."];
+  if (/disk error/.test(T)) return ["Back up what matters from that drive now.", "Run “chkdsk C: /scan” (with that drive's letter) from Terminal (Admin).", "For a SATA drive, reseat or replace its data cable.", "Use “Deep check (as administrator)” to read its own health counters."];
+  if (/used most of its rated life|wear/.test(tip + " " + it.text) && it.area === "Drives") return ["Back up what's on it now: copy your files to another drive, or use File History (Settings → System → Storage → Advanced → Backup options).", "At this wear the drive has reached the amount of writing it was rated for. Many keep working for a long time, but it can now fail without warning.", "Plan to replace it: any current SSD is faster and bigger. If Windows is on it, clone it to the new one with the new drive maker's free tool (Samsung Magician, Crucial/WD Acronis edition) or Clonezilla.", "Until then, keep heavy writing off it: no game downloads or page file on it."];
+  if (/health as|uncorrected/.test(T)) return ["Back up what matters from it right away.", "Replace the drive: Windows already sees it failing.", "Until then avoid writing big files to it."];
+  if (/free of/.test(T)) return ["Settings → System → Storage → Temporary files: remove what's listed.", "Turn on Storage Sense on the same page.", "Move games you don't play now to another drive (Steam → Settings → Storage lets you move them) or uninstall them."];
+  if (/hot|temperature/i.test(T) && it.area === "Drives") return ["Give the drive airflow: an NVMe drive under the graphics card often needs its heatsink (or the motherboard's cover) fitted.", "Check the case fans blow through the case."];
+  if (/graphics driver stopped/.test(T)) return ["Install the newest graphics driver as a clean install (NVIDIA app → Drivers → Reinstall → Clean install; AMD Adrenalin → Factory reset).", "Remove any GPU overclock or undervolt (MSI Afterburner etc.).", "Check the card's power cables are fully seated.", "If it keeps happening in every game, the card itself may be the cause."];
+  if (/driver .*old|over a year old/.test(T + tip)) return ["Download the newest driver from NVIDIA, AMD or Intel (or their app).", "Choose a clean install, then restart."];
+  if (/Graphics card temperature/.test(T)) return ["Clean the dust from the card's fans and heatsink.", "Check the case's fans pull air in at the front and push it out at the back/top.", "Lower the frame-rate limit in games that don't need it: less heat."];
+  if (/ran low on memory/.test(T) || /% in use/.test(T)) return ["Close what you don't need before a game (browsers with many tabs take the most).", "Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory: “Automatically manage” on.", "Keep free room on the drive that holds the page file."];
+  if (/Only .* GB of memory/.test(T)) return ["Add memory: 16 GB is the minimum for current games, 32 GB is comfortable.", "Buy a matched pair, the same type your motherboard takes (DDR4 or DDR5)."];
+  if (/single memory module/.test(T)) return ["A matched pair runs in dual channel: noticeably faster in games.", "Add a second identical module (same size and speed), or replace it with a pair."];
+  if (/label says/.test(T)) return ["Restart into the BIOS (press Del or F2 while it starts).", "Turn on XMP (Intel) or EXPO / DOCP (AMD), save and restart.", "If the PC becomes unstable, turn it back off."];
+  if (/page file/.test(T)) return ["Settings → System → About → Advanced system settings → Performance → Advanced → Virtual memory → “Automatically manage” on.", "Keep free room on that drive."];
+  if (/connection problem/.test(T)) return ["Open each drop under PC tab → What went wrong: it shows what the app found about the network card and what to try.", "PC tab → Outage report lists every drop over the dates you pick, ready to send to your internet provider."];
+  if (/isn't answering|No network connection|name server|linked at only|Internet answers/.test(T)) return (it.tip ? [it.tip] : []).concat(["Restart the router (and the modem), then check again.", "Try a different cable or router port."]);
+  if (/on Wi-Fi/.test(T)) return ["Use a network cable for games if you can.", "Otherwise use the 5 GHz (or 6 GHz) network and keep the PC in sight of the router."];
+  if (/programs start with Windows/.test(T)) {
+    const st = (Array.isArray(c.ps.startup) ? c.ps.startup : []), dup = {}; for (const x of st) dup[x] = (dup[x] || 0) + 1;
+    const twice = Object.entries(dup).filter(([, v]) => v > 1).map(([k, v]) => k + " (" + v + "×)");
+    return ["Open Task Manager (Ctrl+Shift+Esc) → Startup apps, and sort by “Startup impact”.", "Disable what you don't need the moment Windows starts: updaters, game launchers you open yourself, cloud and chat apps you can start when needed. Disabling only stops it starting by itself; nothing is removed.", ...(twice.length ? ["Listed more than once (worth a look, one may be left over from an old install): " + twice.join(", ") + "."] : []), "Restart and see how quickly the PC is ready."];
+  }
+  if (/waiting for a restart/.test(T)) return ["Save your work and restart the PC (Start → Power → Update and restart)."];
+  if (/Last Windows update/.test(T)) return ["Settings → Windows Update → Check for updates, and install what's offered.", "If something fails to install, run the Windows Update troubleshooter (Settings → System → Troubleshoot)."];
+  if (/real-time protection is off/.test(T)) return ["Windows Security → Virus & threat protection → Manage settings → Real-time protection: On.", "If another antivirus is installed, it turns this off on purpose: that's fine."];
+  if (/Power plan/.test(T)) return ["Settings → System → Power → Power mode: Best performance (or Balanced)."];
+  if (/BIOS/.test(T) && c.ps.board) {
+    const t = Date.parse(c.ps.board.biosDate), age = t ? (c.now - t) / 86400000 : -1, b = c.ps.board;
+    return age > 180 ? ["This BIOS is " + Math.round(age / 30) + " months old. Look for a newer one on " + (b.maker || "the maker") + "'s support page for the " + b.model + ".", "Read its notes: updates often bring stability and processor fixes (for AMD, a newer AGESA).", "Update with the board's own tool (ASUS EZ Flash, MSI M-Flash, Gigabyte Q-Flash) from a USB stick. Don't turn the PC off while it runs.", "Your BIOS settings (XMP/EXPO, fan curves) usually go back to default: note them first."] : ["Nothing to do: this is for reference, and the BIOS is recent."];
+  }
+  if (/program crash/.test(T)) return ["If one program crashes over and over, reinstall or update it.", "Crashes of many programs at once point to memory or an overclock: see the blue-screen steps."];
+  return tip ? [tip] : null;
+}
+
 async function check(opts) {
   if (checking) return checking;
   const admin = !!(opts && opts.admin);
   checking = (async () => {
-    const now = Date.now(), items = [], add = (sev, area, title, text, tip) => items.push({ sev, area, title, text: text || "", tip: tip || "" });
+    const now = Date.now(), items = [], add = (sev, area, title, text, tip, steps) => items.push({ sev, area, title, text: text || "", tip: tip || "", steps: steps || null, key: area + ":" + String(title).replace(/[0-9.,:]+/g, "#").replace(/\s+/g, " ").slice(0, 80) });
     const psP = LINUX ? linuxHealth(admin) : admin ? powershellElevated(HEALTH_PS, 60000).then((r) => (r && r.ok ? r : powershell(HEALTH_PS, 60000))) : powershell(HEALTH_PS, 60000);
     const [pcR, netR, evR, sysR, psR] = await Promise.all([X.ask("pc", { top: 1 }, 10000), S().net ? X.ask("net", { hosts: NET_HOSTS, name: "example.com" }, 8000) : null, X.ask("events", { from: now - 30 * 86400000, to: now }, 60000), X.ask("sysinfo", {}, 15000), psP]);
     const p = pcR && pcR.ok ? pcR.pc : cur.pc, n = netR && netR.ok ? netR.net : cur.net, ps = psR && psR.ok ? psR.data : {}, sys = sysR && sysR.ok ? sysR.info : {}, wasElevated = !!(psR && psR.elevated);
@@ -359,6 +568,7 @@ async function check(opts) {
     if (ps.board && ps.board.biosDate) { const age = (now - new Date(ps.board.biosDate).getTime()) / (365 * 86400000); add("info", "Hardware", (ps.board.maker + " " + ps.board.model).trim() + ", BIOS " + ps.board.bios + " from " + ps.board.biosDate, ps.cpu ? ps.cpu.name + " (" + ps.cpu.cores + " cores, " + ps.cpu.threads + " threads)" : "", age > 2 ? "The BIOS is over two years old. Newer ones fix stability and memory problems; update it only when the PC is otherwise stable and never during a storm." : ""); }
 
     if (LINUX) for (const i of items) { i.title = linuxWords(i.title); i.text = linuxWords(i.text); i.tip = linuxWords(String(i.tip || "").replace(/ and run 'chkdsk \/scan' from an administrator terminal/, " and its file system (fsck, from a live USB)").replace(/ \(Shut down with Fast Startup on doesn't count as one\.\)/, "")); if (i.area === "Windows") i.area = "System"; }
+    for (const it of items) if (!it.steps) it.steps = healthSteps(it, { ps, p, n, sys, now });
     const order = { bad: 0, warn: 1, info: 2, ok: 3 }; items.sort((a, b) => order[a.sev] - order[b.sev]);
     const res = { at: now, items, bad: items.filter((i) => i.sev === "bad").length, warn: items.filter((i) => i.sev === "warn").length, partial: !LINUX && (!psR || !psR.ok), elevated: wasElevated };
     DB.health = res; save();
@@ -416,7 +626,7 @@ exports.start = function (x) {
   setInterval(() => netTick().catch(() => {}), 10000);
   setTimeout(() => eventsTick().catch(() => {}), 15000); setInterval(() => eventsTick().catch(() => {}), 60000);
   app.on("before-quit", () => { if (!onPurpose) return; try { fs.writeFileSync(flagFile(), String(Date.now())); } catch {} });
-  ipcMain.handle("pc-state", () => ({ live: live(), incidents: DB.incidents.slice(0, 200), settings: S(), health: DB.health, logDir: LOGDIR() }));
+  ipcMain.handle("pc-state", () => ({ live: live(), incidents: DB.incidents.slice(0, 200), settings: S(), health: DB.health, ignore: DB.ignore, logDir: LOGDIR() }));
   ipcMain.handle("pc-settings", (_e, v) => {
     const s = S(); v = v || {};
     for (const k of ["on", "net", "notify", "keepAlive", "askQuit"]) if (typeof v[k] === "boolean") s[k] = v[k];
@@ -426,6 +636,14 @@ exports.start = function (x) {
     return s;
   });
   ipcMain.handle("pc-check", (_e, a) => check(a));
+  ipcMain.handle("pc-outages", (_e, a) => outagesBetween(+(a && a.from) || 0, +(a && a.to) || Date.now()));
+  ipcMain.handle("pc-outagesave", (_e, a) => {
+    const dir = path.join(app.getPath("downloads"), "aGoldenDiagnose"), f = path.join(dir, "Internet outage report " + String((a && a.name) || "").replace(/[^0-9a-z -]/gi, "").slice(0, 40) + ".txt");
+    try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, String((a && a.text) || "").replace(/\r?\n/g, "\r\n")); shell.showItemInFolder(f); return { ok: true, path: f }; } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("pc-ignore", (_e, a) => { const k = String((a && a.key) || ""); if (!k) return false; if (a.on) DB.ignore[k] = { at: Date.now(), title: String(a.title || "").slice(0, 200) }; else delete DB.ignore[k]; save(); return DB.ignore; });
+  ipcMain.handle("pc-netdiag", async (_e, a) => { const i = DB.incidents.find((x) => x.id === (a && a.id)); return i ? netDiag(i) : null; });
+  ipcMain.handle("pc-detail", async (_e, a) => detail(String((a && a.which) || "")));
   ipcMain.handle("pc-clear", () => { DB.incidents = DB.incidents.filter((i) => i.open); save(); return true; });
   ipcMain.handle("pc-folder", () => { const d = path.join(X.DATA, "_PC"); try { fs.mkdirSync(LOGDIR(), { recursive: true }); } catch {} shell.openPath(d); return true; });
 };

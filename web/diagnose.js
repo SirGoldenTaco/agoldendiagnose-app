@@ -154,10 +154,39 @@ function drawReports() {
     }
     box.appendChild(c);
   }
-  for (const r of list) {
-    const row = el("button", "rrow"); row.type = "button"; row.appendChild(badge(r.kind));
-    const t = el("div", "t"); t.appendChild(el("b", null, r.game + " · " + r.title)); t.appendChild(el("small", null, when(r.end) + " · played " + D.fmtDur(r.end - r.start) + (r.files ? " · " + r.files + " file" + (r.files > 1 ? "s" : "") + " collected" : "")));
-    row.appendChild(t); row.onclick = guard(() => openReport(r.id)); box.appendChild(row);
+  // Reports: each can be archived (✕), and old ones all at once; archived ones wait at the bottom and can come back.
+  // Archiving only hides a report from the list: its folder and files stay, and Patterns still count it.
+  const rarch = store.get("repArchive", {}) || {}, ids = new Set(ST.reports.map((r) => r.id));
+  for (const k of Object.keys(rarch)) if (!ids.has(k)) delete rarch[k];          // reports deleted since: forgotten
+  const setArch = (fn) => { const a = Object.assign({}, store.get("repArchive", {}) || {}); fn(a); store.set("repArchive", a); drawReports(); };
+  const live = list.filter((r) => !rarch[r.id]), gone = list.filter((r) => rarch[r.id]).sort((a, b) => rarch[b.id] - rarch[a.id]);
+  const OLD = 30 * 86400000, old = live.filter((r) => Date.now() - r.end > OLD);
+  const row = (r, archived) => {
+    const w = el("div"); w.style.position = "relative";
+    const b = el("button", "rrow"); b.type = "button"; b.appendChild(badge(r.kind)); b.style.paddingRight = archived ? "104px" : "44px"; if (archived) b.style.opacity = ".7";
+    const t = el("div", "t"); t.appendChild(el("b", null, r.game + " · " + r.title)); t.appendChild(el("small", null, when(r.end) + " · played " + D.fmtDur(r.end - r.start) + (r.files ? " · " + r.files + " file" + (r.files > 1 ? "s" : "") + " collected" : "") + (archived ? " · archived " + when(rarch[r.id]) : "")));
+    b.appendChild(t); b.onclick = guard(() => openReport(r.id)); w.appendChild(b);
+    const x = archived ? btn("ghost small", "Bring back", () => setArch((a) => { delete a[r.id]; })) : btn("ghost small", "✕", () => setArch((a) => { a[r.id] = Date.now(); }));
+    x.title = archived ? "Put it back in the list" : "Archive (it moves to the bottom; nothing is deleted)";
+    x.style.cssText = "position:absolute;top:50%;right:8px;transform:translateY(-50%);padding:2px 8px"; w.appendChild(x);
+    return w;
+  };
+  if (old.length) {
+    const bar = el("div", "row"); bar.style.cssText = "margin:0 0 8px;gap:8px;align-items:center";
+    bar.appendChild(el("span", "kv grow", old.length + " report" + (old.length > 1 ? "s are" : " is") + " older than 30 days."));
+    bar.appendChild(btn("ghost small", "Archive them", () => setArch((a) => { const now = Date.now(); for (const r of old) a[r.id] = now; })));
+    box.appendChild(bar);
+  }
+  if (!live.length && gone.length) { const e = el("div", "empty", "Every report is in the archive below."); box.appendChild(e); }
+  for (const r of live) box.appendChild(row(r, false));
+  if (gone.length) {
+    const ad = el("details", "card"); ad.style.marginTop = "10px"; ad.open = store.get("repArchOpen", false) === true;
+    ad.addEventListener("toggle", () => store.set("repArchOpen", ad.open));
+    const as = el("summary", "kv", "Archived reports (" + gone.length + ")"); as.style.cursor = "pointer"; ad.appendChild(as);
+    const note = el("div", "kv", "Hidden from the list, nothing deleted: open one, or bring it back."); note.style.margin = "6px 0"; ad.appendChild(note);
+    for (const r of gone) ad.appendChild(row(r, true));
+    const all = btn("ghost small", "Bring them all back", () => setArch((a) => { for (const r of gone) delete a[r.id]; })); all.style.marginTop = "6px"; ad.appendChild(all);
+    box.appendChild(ad);
   }
 }
 

@@ -113,14 +113,31 @@
   .ddnone{color:var(--dim);padding:10px;font-size:14px}
   /* the PC tab */
   .pctiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px}
-  .pctile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+  .pctile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0;display:flex;flex-direction:column;cursor:pointer;transition:border-color .15s}
+  .pctile:hover,.pctile:focus-visible{border-color:var(--gold);outline:0}
   .pctile .lbl,.topcol .lbl{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
-  .pctile .big{font-size:28px;font-weight:800;line-height:1.15;margin-top:2px}
+  .pctile .big{font-size:26px;font-weight:800;line-height:1.2;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  #tLink .big{font-size:22px}
+  .pctile .rows{margin:8px 0 2px;display:grid;gap:3px}
+  .pctile .trow{display:flex;justify-content:space-between;gap:8px;font-size:13px;line-height:1.35}
+  .pctile .trow .k{color:var(--dim);white-space:nowrap;flex:none}
+  .pctile .trow .v{color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;text-align:right;min-width:0}
+  .pctile canvas.spark{margin-top:auto;padding-top:6px}
   .pctile .sub{font-size:12.5px;color:var(--dim);min-height:1.3em;overflow-wrap:anywhere}
   .pctile.warn{border-color:rgba(227,179,65,.6)}.pctile.warn .big{color:var(--gold)}
   .pctile.bad{border-color:rgba(255,123,114,.6)}.pctile.bad .big{color:var(--bad)}
   .pctile.good .big{color:var(--good)}
   canvas.spark{display:block;width:100%;height:44px;margin-top:6px}
+  canvas.spark.big{height:110px;margin:6px 0}
+  #pcBody.detailing>:not(#pcDetail){display:none}
+  .detbig{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .facts2{display:grid;grid-template-columns:minmax(140px,auto) 1fr;gap:5px 16px;margin-top:10px;font-size:14px}
+  .facts2 .k{color:var(--dim)}.facts2 .v{font-weight:600;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+  .steps{margin-top:8px}.steps b{display:block;margin-top:8px}.steps ol{margin:4px 0 0;padding-left:22px;line-height:1.55}.steps li{margin:3px 0}
+  .lbl2{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin-top:8px}
+  .found p{margin:4px 0;line-height:1.5}
+  details.todo{margin-top:6px}details.todo>summary{cursor:pointer;color:var(--gold);font-weight:600}
+  .hrow.ignored{opacity:.65}
   .drv{display:grid;grid-template-columns:minmax(90px,170px) 1fr auto;gap:10px;align-items:center;padding:6px 0}
   .drv b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drv small{color:var(--dim);white-space:nowrap}
   .drv .bar{height:9px;border-radius:999px;background:var(--line,#2c3038);overflow:hidden}.drv .bar i{display:block;height:100%;background:var(--gold);border-radius:999px}
@@ -290,13 +307,22 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
 <section id="tab-pc" hidden>
   <div class="empty" id="pcOff" hidden>Watching the PC is turned off. <button type="button" class="small" id="pcTurnOn" style="margin-left:8px">Turn it on</button></div>
   <div id="pcBody">
+    <div id="pcDetail"></div>
     <div class="banner" id="pcHead"><span class="dot" id="pcDot"></span><span id="pcLine" class="grow">…</span><button type="button" class="ghost small" id="pcCheckAdmin" title="Runs the check with administrator rights (one Windows prompt). Only needed to read a drive's own health: wear, temperature and errors.">Deep check (as administrator)</button><button type="button" id="pcCheck">Check my PC</button></div>
     <div id="pcTiles" class="pctiles"></div>
     <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Drives</div><div id="pcDrives"></div><div class="sec">Right now</div><div id="pcTop" class="pctop"></div><div class="kv" id="pcUp" style="margin-top:8px"></div></div>
     <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Check my PC</div><div id="pcHealth"></div></div>
     <div class="card" style="margin-top:10px">
-      <div class="row"><div class="sec grow" style="margin:0">What went wrong</div><button type="button" class="ghost small" id="pcFolder" title="One readable log file per day, and each Check my PC result">Open the logs folder</button><button type="button" class="ghost small" id="pcClear" hidden>Clear the list</button></div>
+      <div class="row"><div class="sec grow" style="margin:0">What went wrong</div><button type="button" class="ghost small" id="pcOutBtn" title="Every time the internet dropped, over the dates you pick: ready to send to your internet provider">Outage report</button><button type="button" class="ghost small" id="pcFolder" title="One readable log file per day, and each Check my PC result">Open the logs folder</button><button type="button" class="ghost small" id="pcClear" hidden>Clear the list</button></div>
       <div class="kv" style="margin:6px 0 10px">Written down by itself when it happens: the internet or the router dropping, memory filling up, the graphics card overheating, a drive filling up or giving errors, blue screens, sudden shutdowns, hardware errors, and programs crashing.</div>
+      <div id="pcOut" class="opts" hidden style="margin:0 0 12px;padding:10px;border:1px solid var(--line, #2a2f37);border-radius:8px">
+        <div class="row" style="flex-wrap:wrap;gap:8px;align-items:end"><b class="grow">Internet outage report</b>
+          <label class="kv">From <input type="date" id="pcOutFrom"></label><label class="kv">To <input type="date" id="pcOutTo"></label>
+          <button type="button" class="small" id="pcOutMake">Make the report</button></div>
+        <div class="kv" style="margin:6px 0">Every drop and unstable stretch the app saw between those dates, with which part was down, to send to your internet provider. Drops where the router still answered point to the modem or the provider; the others are on your side, and the report says so.</div>
+        <pre id="pcOutText" class="kv" hidden style="white-space:pre-wrap;max-height:360px;overflow:auto;margin:8px 0;user-select:text"></pre>
+        <div class="row" id="pcOutActs" hidden style="gap:8px"><button type="button" class="small" id="pcOutCopy">Copy</button><button type="button" class="ghost small" id="pcOutSave">Save as a .txt</button></div>
+      </div>
       <div id="pcInc"></div><div class="empty" id="pcIncNone">Nothing has gone wrong since the watching started.</div>
     </div>
   </div>

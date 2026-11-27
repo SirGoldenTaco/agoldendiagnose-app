@@ -4,6 +4,44 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.39 - 2026-11-26
+
+**The PC tab**
+
+- **Each tile opens in detail** (new): click Processor, Memory, Graphics card, Internet or Network. The page shows a bigger chart, everything the app reads about it right now (model, driver, temperatures, video memory, reply times, the network card and its settings…), the programs using it most, every problem the app saw with it, what Windows' own log wrote about it in the last 14 days, and what you can do. **← Back** or **Esc** returns. `web/pc.js`, `web/index.html`, `desktop/pc.js` (`detail`).
+- **Easier to read tiles:** each tile has the same labelled lines (Temp, Threads, Used, VRAM, Router…) instead of one sentence, and the numbers keep the same width, so the tile no longer grows or shrinks while the values change. `web/pc.js`, `web/index.html`.
+- **Temperatures** (new): each drive's own sensor (Windows' storage temperature query, no administrator rights needed for most drives) in the Drives list and on the Processor page, with a warning when a drive passes its own limit; the motherboard's ACPI zone when Windows reports one; and the processor's, the memory's and the motherboard's sensors when LibreHardwareMonitor is running (see the README: Windows has no way to read those without a driver, and this app doesn't install one). The graphics card's was already there. A warning when the processor stays at 90 °C or more. On Linux all of them come from the kernel's sensors. `desktop/helper/AgdHelper.cs` (`Temps`), `desktop/pc.js` (`tempTick`, `readLhm`, `readHwmon`).
+- **Internet drops are looked into** (new): when a drop ends, the app reads (without changing anything) the network card in use, its driver and its date, its power-saving settings (Energy-Efficient Ethernet, Green Ethernet…), whether Windows may turn it off, what Windows wrote in its log around the drop, and how often the card reported its link going down in the last 7 days. Opening the drop shows **What the app found** and **What to try**, step by step, for that kind of drop: this PC's connection, the router, or past the router. Older drops have a **Look into it** button. `desktop/pc.js` (`netDiag`, `netAdvice`), `web/pc.js`.
+- **Check my PC: what to do, and Ignore** (new): each finding has **What to do**, with steps for that finding (a worn SSD, startup programs, an old BIOS, blue-screen dumps, drivers, memory…). **Ignore** hides a finding and leaves it out of the count; it waits under "ignored", where **Unignore** brings it back. `desktop/pc.js` (`healthSteps`), `web/pc.js`.
+
+**Also in this version**
+
+- **Archive old reports** (new): on the Reports tab, each report has a **✕** that moves it to **Archived reports** at the bottom of the list, and when some are older than 30 days, **Archive them** does those all at once. Archiving only hides a report from the list: its folder and files stay where they are, it can still be opened from the archive, **Bring back** (or **Bring them all back**) returns it, and Patterns still count it. The archive is kept with the app's other settings on this PC. `web/diagnose.js`.
+- **Internet outage report** (new): PC tab → What went wrong → **Outage report**. Pick two dates and it lists every time the internet dropped or was unstable in between: the date, when it started and ended, how long it lasted, and which part was down (this PC's connection, the router, or the internet past the router). A summary at the top counts the drops, the total time down, the longest one and the worst days, and says how many were past the router, which points to the modem or the internet provider rather than the home network. **Copy** puts it on the clipboard to paste in an e-mail or a chat with your provider; **Save as a .txt** puts it in `Downloads\aGoldenDiagnose`. Nothing is sent anywhere. `web/pc.js`, `web/index.html`, `desktop/pc.js`, `desktop/preload.js`.
+- Drops are now kept in their own list (up to about 3000), so the report can go back months instead of only as far as the newest 400 entries of "What went wrong". Drops from before this version are taken from that list. `desktop/pc.js`.
+- The check that runs before this page is updated now lives in its own file, `desktop/public-guard.js`, which stays with the author and isn't part of this page or the app. It checks the same things as before, and also the author's personal details. `desktop/public-source.js`.
+- `CHANGELOG.md`: the heading of 1.33 below had been left out by mistake; it's back.
+
+## 1.38 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.39 above.
+
+## 1.37 - 2026-11-26
+
+- Never published: its build stopped itself before anything was made (a check found that a shared copy would have included a part that only applies to the author's own PC), and nothing was released. Everything is listed under 1.39 above.
+
+## 1.36 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.39 above.
+
+## 1.35 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.39 above.
+
+## 1.34 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.39 above.
+
 ## 1.33 - 2026-11-26
 
 - **This page was cleaned up.** Some code comments and some notes below mentioned things that are not part of aGoldenDiagnose. They were reworded or taken out, and code that only applied to the author's own PC is no longer in this copy. No change to what the app does for you. `CHANGELOG.md`, comments in `web/` and `desktop/`, `desktop/watch.js`, `desktop/helper/AgdHelper.cs`.
