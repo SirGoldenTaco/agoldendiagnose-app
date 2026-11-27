@@ -177,7 +177,8 @@ jobs:
           # what changed: this version's part of the changelog, then the files that changed since the release before,
           # taken from the code itself, with a link to the line-by-line differences
           prev=$(gh release list -L 20 --exclude-drafts --json tagName,createdAt -q 'sort_by(.createdAt) | reverse | .[].tagName' -R "$GITHUB_REPOSITORY" | grep -vx "$TAG" | head -n 1 || true)
-          log=$(awk -v v="${TAG#v}" 'index($0, "## " v " ") == 1 || $0 == "## " v { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md 2>/dev/null | sed -e '/./,$!d' || true)
+          # a heading for one version ("## 1.57 - date") or for versions grouped together ("## 1.55–1.56 - date", which is the last one's)
+          log=$(awk -v v="${TAG#v}" '/^## / { n = split($2, p, /–|-/); f = (p[n] == v); next } f' CHANGELOG.md 2>/dev/null | sed -e '/./,$!d' || true)
           {
             echo "## What changed"
             echo
