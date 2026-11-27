@@ -20,6 +20,16 @@ const AUTOSTART = require("./autostart");
 const LINUX = process.platform === "linux";
 const { linuxWords } = require(path.join(__dirname, "web", "analyze.js"));          // the same sentences, said the Linux way
 
+/** A message cut to fit without breaking it mid-word: whole sentences when they fit, otherwise up to a word, then "…". */
+function clip(s, n) {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n), end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  if (end > n * 0.5) return cut.slice(0, end + 1);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:–-]+$/, "") + "…";
+}
+
 let X = null;                    // what watch.js hands over: ask, tell, alog, cfg(), save(), helperOk(), games(), DATA
 const DEF = { on: false, net: false, notify: false, keepAlive: false, askQuit: false, ramPct: 92, gpuTemp: 87 };
 const S = () => { const c = X.cfg(); c.pc = Object.assign({}, DEF, c.pc || {}); return c.pc; };
@@ -164,7 +174,7 @@ function netAdvice(what, d) {
   const eeeOff = set.some((x) => /energy[- ]efficient|^eee$|advanced eee/i.test(x.n) && !isOn(x.v));
   const speed = set.find((x) => /speed\s*(&|and)\s*duplex|^link speed|duplex mode/i.test(x.n) && !/eee|max support/i.test(x.n));
   const linkDown = ev.filter((e) => /disconnect|link (is )?down|network link/i.test(e.m) || e.id === 27), resets = ev.filter((e) => /resetting/i.test(e.m) || e.id === 10400);
-  if (ev.length) found.push("Windows' log around the drop: " + ev.slice(0, 4).map((e) => e.p + " " + e.id + ": " + e.m.slice(0, 120)).join(" | "));
+  if (ev.length) found.push("Windows' log around the drop: " + ev.slice(0, 4).map((e) => e.p + " " + e.id + ": " + clip(e.m, 260)).join(" | "));
   else if (d.events) found.push("Windows' log has nothing from the network card around the drop.");
   if (wk.all != null) found.push("In the last 7 days the network card reported " + (wk.down || 0) + " link drop" + (wk.down === 1 ? "" : "s") + " and Windows reset it " + (wk.resets || 0) + " time" + (wk.resets === 1 ? "" : "s") + ".");
   if (saving.length) found.push("Power saving is on in the card's settings: " + saving.map((x) => x.n + " = " + x.v).join(", ") + ".");
@@ -337,12 +347,12 @@ const FIRMWARE = /firmware|microprogramme/i;
 function classify(e) {
   const p = e.provider || "", id = e.id | 0, msg = String(e.message || "").replace(/\s+/g, " ").trim(), d = e.data || [];
   if (/Kernel-Power/i.test(p) && id === 41) return ["power", "bad", "The PC shut down or restarted without warning", "Windows found at start-up that it had not been shut down properly: a power cut, a hard reset, a freeze, or the PC losing power under load (power supply, overheating)."];
-  if (/BugCheck|WER-SystemErrorReporting/i.test(p) && id === 1001) return ["bsod", "bad", "Blue screen", msg.slice(0, 400) || "Windows stopped with a blue screen and restarted."];
-  if (/WHEA/i.test(p)) return ["hardware", e.level <= 2 ? "bad" : "warn", "Hardware error reported by the processor or motherboard", msg.slice(0, 400) || "WHEA event " + id + ". These come from the hardware itself: an unstable overclock or memory profile, overheating, or a failing part."];
-  if (/^(disk|Ntfs|volmgr|stornvme|storahci)$/i.test(p) && e.level <= 3 && [7, 11, 15, 51, 52, 55, 98, 129, 153, 157].includes(id)) return ["diskerr", id === 7 || id === 52 || id === 55 ? "bad" : "warn", "Disk error (" + p + " " + id + ")", msg.slice(0, 400) || "Windows had trouble reading or writing a drive. Back up what matters and check the drive's health."];
-  if (/^(Display|nvlddmkm|amdkmdag|amdwddmg|igfx)$/i.test(p) || (/DxgKrnl/i.test(p) && e.level <= 2)) return ["gpudrv", "warn", "The graphics driver stopped and recovered", msg.slice(0, 400) || "The screen froze or went black for a moment and the driver was restarted."];
-  if (/Resource-Exhaustion/i.test(p)) return ["lowmem", "bad", "Windows ran low on memory", msg.slice(0, 400)];
-  if (/Kernel-Processor-Power/i.test(p) && id === 37 && FIRMWARE.test(msg)) return ["throttle", "info", "The processor's speed is being limited by the firmware", msg.slice(0, 300)];
+  if (/BugCheck|WER-SystemErrorReporting/i.test(p) && id === 1001) return ["bsod", "bad", "Blue screen", clip(msg, 400) || "Windows stopped with a blue screen and restarted."];
+  if (/WHEA/i.test(p)) return ["hardware", e.level <= 2 ? "bad" : "warn", "Hardware error reported by the processor or motherboard", clip(msg, 400) || "WHEA event " + id + ". These come from the hardware itself: an unstable overclock or memory profile, overheating, or a failing part."];
+  if (/^(disk|Ntfs|volmgr|stornvme|storahci)$/i.test(p) && e.level <= 3 && [7, 11, 15, 51, 52, 55, 98, 129, 153, 157].includes(id)) return ["diskerr", id === 7 || id === 52 || id === 55 ? "bad" : "warn", "Disk error (" + p + " " + id + ")", clip(msg, 400) || "Windows had trouble reading or writing a drive. Back up what matters and check the drive's health."];
+  if (/^(Display|nvlddmkm|amdkmdag|amdwddmg|igfx)$/i.test(p) || (/DxgKrnl/i.test(p) && e.level <= 2)) return ["gpudrv", "warn", "The graphics driver stopped and recovered", clip(msg, 400) || "The screen froze or went black for a moment and the driver was restarted."];
+  if (/Resource-Exhaustion/i.test(p)) return ["lowmem", "bad", "Windows ran low on memory", clip(msg, 400)];
+  if (/Kernel-Processor-Power/i.test(p) && id === 37 && FIRMWARE.test(msg)) return ["throttle", "info", "The processor's speed is being limited by the firmware", clip(msg, 300)];
   if (p === "Application Error" && id === 1000) { const exe = d[0] || "A program"; if (X.games().includes(String(exe).toLowerCase())) return null; return ["appcrash", "warn", exe + " crashed", "In " + (d[3] || "an unknown file") + (d[6] ? ", error " + d[6] : "") + "."]; }
   if (p === "Application Hang" && id === 1002) { const exe = d[0] || "A program"; if (X.games().includes(String(exe).toLowerCase())) return null; return ["apphang", "info", exe + " stopped responding", "Windows closed it after it stopped answering."]; }
   return null;

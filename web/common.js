@@ -77,10 +77,11 @@ function showUpd(text, mode) {
 }
 /* The "Check for updates" button says what it's doing: "Checking for updates…", then "✓ Up to date" (or "Update
    available", "Couldn't check") for a couple of seconds, then fades back to "Check for updates". */
+const updRest = () => (updUI.latest && updUI.availNow ? "Update to v" + updUI.latest : "Check for updates");
 function updBtnFlash(text, ms) {
   const b = updUI.btn; if (!b) return;
   clearTimeout(updUI.flashT); b.disabled = false; b.textContent = text; b.style.transition = "opacity .35s"; b.style.opacity = "1";
-  updUI.flashT = setTimeout(() => { b.style.opacity = "0"; updUI.flashT = setTimeout(() => { b.textContent = "Check for updates"; b.style.opacity = "1"; }, 350); }, ms || 2500);
+  updUI.flashT = setTimeout(() => { b.style.opacity = "0"; updUI.flashT = setTimeout(() => { b.textContent = updRest(); b.style.opacity = "1"; }, 350); }, ms || 2500);
 }
 async function checkUpdates(manual) {
   if (!NATIVE.kind) { if (manual) showUpd("Updates come through the Windows or Android app."); return; }
@@ -94,14 +95,16 @@ async function checkUpdates(manual) {
     else showUpd(CFG.name + " " + appVersion);
     return;
   }
-  if (r.available) { if (manual) updBtnFlash("Update available");
-    updUI.latest = r.latest; updUI.info = r.info || null; updUI.current = r.current;
+  if (r.available) {
+    updUI.latest = r.latest; updUI.info = r.info || null; updUI.current = r.current; updUI.availNow = true;
+    // the top row only shows the button (the update line under it is folded away), so the button itself becomes "Update to vX"
+    if (updUI.btn && !updUI.btn.hidden) { if (manual) updBtnFlash("Update available", 1200); else updUI.btn.textContent = updRest(); }
     let skip = ""; try { skip = localStorage.getItem("updSkip") || ""; } catch (e) {}
     if (!manual && CFG.share && skip === r.latest) { showUpd(CFG.name + " " + r.current); return; }      // you chose to skip that one
     if (!manual && !updNotify()) { showUpd(CFG.name + " " + r.current); return; }                           // "Tell me when an update is available" is off
     showUpd("Version " + r.latest + " is available (you have " + r.current + ").", "avail");   // never "<name> <version>…": the title row reads that as the version you have
   }
-  else { showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current); if (manual) updBtnFlash("✓ Up to date"); }
+  else { updUI.availNow = false; showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current); if (manual) updBtnFlash("✓ Up to date"); }
 }
 /* The copy given to other people never updates without asking: Update first shows what's in the new version (the
    release page's notes, its date, size and SHA-256) over the page, and only "Agree and update" downloads it.
@@ -150,20 +153,22 @@ function askUpdate() {
 async function installUpdate() {
   if (CFG.share && !(await askUpdate())) return;
   updUI.busy = true; updUI.go.disabled = true; showUpd("Downloading the update…", "busy");
+  if (updUI.btn) { clearTimeout(updUI.flashT); updUI.btn.style.opacity = "1"; updUI.btn.disabled = true; updUI.btn.textContent = "Downloading the update…"; }
   const r = await NATIVE.installUpdate();
-  updUI.busy = false; updUI.go.disabled = false;
-  if (!r || !r.ok) { showUpd(r && r.error === "permission" ? "Allow " + CFG.name + " to install apps in the screen that opened, then tap Update again." : r && r.error === "not-portable" ? "Updates install by themselves only from " + CFG.name + ".exe." : "The update couldn't be downloaded. Try again later.", "avail"); return; }
+  updUI.busy = false; updUI.go.disabled = false; if (updUI.btn) updUI.btn.disabled = false;
+  if (!r || !r.ok) { if (updUI.btn) updBtnFlash(r && r.error === "not-portable" ? "Only " + CFG.name + ".exe updates itself" : "Couldn't download it", 4000); showUpd(r && r.error === "permission" ? "Allow " + CFG.name + " to install apps in the screen that opened, then tap Update again." : r && r.error === "not-portable" ? "Updates install by themselves only from " + CFG.name + ".exe." : "The update couldn't be downloaded. Try again later.", "avail"); return; }
+  if (updUI.btn) updUI.btn.textContent = "Installing… reopening";
   showUpd(NATIVE.kind === "e" ? "Installing. " + CFG.name + " will reopen in a moment." : "Opening the installer…");
   alog("installing update " + updUI.latest, true);
 }
-window.__updateProgress = (pct) => { if (updUI.busy) showUpd("Downloading the update… " + pct + "%", "busy"); };
+window.__updateProgress = (pct) => { if (updUI.busy) { showUpd("Downloading the update… " + pct + "%", "busy"); if (updUI.btn) updUI.btn.textContent = "Downloading… " + pct + "%"; } };
 async function initUpdates() {
   const sw = document.getElementById("pUpdNotify"); if (sw) { sw.checked = updNotify(); sw.onchange = () => { setUpdNotify(sw.checked); if (sw.checked) checkUpdates(false); }; }
   const box = $("upd");
   box.className = "upd";
   box.innerHTML = '<span class="t">…</span><button class="ghost small" type="button">Check for updates</button><button class="small" type="button" hidden>Update</button>';
   updUI.box = box; updUI.txt = box.children[0]; updUI.btn = box.children[1]; updUI.go = box.children[2];
-  updUI.btn.onclick = () => checkUpdates(true);
+  updUI.btn.onclick = () => (updUI.availNow && !updUI.busy ? installUpdate() : checkUpdates(true));
   updUI.go.onclick = installUpdate;
   if (window.native && window.native.onUpdateProgress) window.native.onUpdateProgress(window.__updateProgress);
   appVersion = await NATIVE.version();

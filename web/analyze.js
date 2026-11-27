@@ -2,6 +2,15 @@
  * most likely happened and what to try. Pure functions (no window, no files): the app's page uses them to show a
  * report, and the Windows side uses LOG_PATTERNS while it collects the logs. */
 "use strict";
+/** A message cut to fit without breaking it mid-word: whole sentences when they fit, otherwise up to a word, then "…". */
+function clip(s, n) {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n), end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  if (end > n * 0.5) return cut.slice(0, end + 1);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:–-]+$/, "") + "…";
+}
 (function (root) {
   /* What Windows' exit codes mean. [short name, what it means in plain words] */
   const CODES = {
@@ -149,22 +158,22 @@
     let kind = "normal", title = "Closed normally", why = noCode ? "The game ended, and neither the system log nor the game's own files show a crash." : "The game ended with code 0 and Windows recorded no error.";
 
     if (r.exit && r.exit.how === "lost") {
-      if (bug || power) { kind = "pc"; title = bug ? "The whole PC crashed (blue screen)" : "The PC shut off or restarted without warning"; why = bug ? "Windows recorded a system crash while the game was running" + (bug.message ? ": " + bug.message.split("\n")[0].slice(0, 200) : ".") : "Windows recorded that it wasn't shut down properly (power loss, hard reset, or a freeze you had to cut power on)."; tip("A whole-PC crash is almost never the game's own fault: suspect drivers, heat, the power supply, or an unstable overclock / memory profile (XMP/EXPO)."); tip("Update the graphics driver and the motherboard BIOS, and test with the memory profile turned off."); }
+      if (bug || power) { kind = "pc"; title = bug ? "The whole PC crashed (blue screen)" : "The PC shut off or restarted without warning"; why = bug ? "Windows recorded a system crash while the game was running" + (bug.message ? ": " + clip(bug.message.split("\n")[0], 260) : ".") : "Windows recorded that it wasn't shut down properly (power loss, hard reset, or a freeze you had to cut power on)."; tip("A whole-PC crash is almost never the game's own fault: suspect drivers, heat, the power supply, or an unstable overclock / memory profile (XMP/EXPO)."); tip("Update the graphics driver and the motherboard BIOS, and test with the memory profile turned off."); }
       else { kind = "unknown"; title = "Watching stopped before the game ended"; why = "aGoldenDiagnose was closed (or the PC was restarted normally) while the game was still running, so how it ended isn't known."; }
     } else if (gpuEv.length || tag("gpu").length || (errCode >= 0x887A0005 && errCode <= 0x887A0007) || (mod && mod.kind === "gpu")) {
       kind = "gpu"; title = "The graphics card or its driver stopped answering";
-      why = gpuEv.length ? (r.platform === "linux" ? "The system log recorded the graphics driver failing right when the game ended: “" + String(gpuEv[0].message || "").replace(/\s+/g, " ").slice(0, 160) + "”" : "Windows recorded the graphics driver failing right when the game ended (" + gpuEv[0].provider + " event " + gpuEv[0].id + ").") : mod && mod.kind === "gpu" ? "The crash happened inside " + mod.what + " (" + modName + ")." : tag("gpu").length ? "The game's own log says the graphics device was lost: “" + tag("gpu").slice(-1)[0].text.slice(0, 160) + "”" : "The game ended with a graphics-device error (" + hex(errCode) + ").";
+      why = gpuEv.length ? (r.platform === "linux" ? "The system log recorded the graphics driver failing right when the game ended: “" + clip(gpuEv[0].message, 220) + "”" : "Windows recorded the graphics driver failing right when the game ended (" + gpuEv[0].provider + " event " + gpuEv[0].id + ").") : mod && mod.kind === "gpu" ? "The crash happened inside " + mod.what + " (" + modName + ")." : tag("gpu").length ? "The game's own log says the graphics device was lost: “" + clip(tag("gpu").slice(-1)[0].text, 220) + "”" : "The game ended with a graphics-device error (" + hex(errCode) + ").";
       if (vramFull) { why += " Video memory was full at that moment (" + fmtMB(st.lastSysVram) + " of " + fmtMB(gpu0.vramMB) + ")."; tip("Lower texture quality, resolution or ray tracing: the card's memory was full."); }
       tip("Update the graphics driver; if it started after a driver update, go back to the previous one (a clean install with DDU helps).");
       tip("Remove any GPU overclock or undervolt, and check temperatures" + (st.maxGpuTemp > 0 ? " (the card peaked at " + Math.round(st.maxGpuTemp) + " °C this session)." : "."));
       tip("Cap the frame rate and turn off overlays (Discord, Steam, GeForce) to see if it stops.");
     } else if (tag("vram").length || (vramFull && (crashCode(code) || appErr))) {
       kind = "vram"; title = "The game ran out of video memory";
-      why = tag("vram").length ? "The game's own log says so: “" + tag("vram").slice(-1)[0].text.slice(0, 160) + "”" : "Video memory was full when it crashed (" + fmtMB(st.lastSysVram) + " of " + fmtMB(gpu0.vramMB) + ").";
+      why = tag("vram").length ? "The game's own log says so: “" + clip(tag("vram").slice(-1)[0].text, 220) + "”" : "Video memory was full when it crashed (" + fmtMB(st.lastSysVram) + " of " + fmtMB(gpu0.vramMB) + ").";
       tip("Lower texture quality first, then resolution / ray tracing / frame generation."); tip("Close other programs that use the graphics card (browsers with video, a second game, recording tools).");
     } else if (errCode === 0xC0000017 || errCode === 0xC000012D || exhaust || (tag("oom").length && (crashCode(code) || appErr || code !== 0)) || (ramTight && (crashCode(code) || appErr))) {
       kind = "oom"; title = "The PC ran out of memory";
-      why = exhaust ? "Windows recorded that it was running out of memory when the game ended." : tag("oom").length ? "The game's own log says so: “" + tag("oom").slice(-1)[0].text.slice(0, 160) + "”" : ramTight ? "Memory was almost full when it crashed (" + (st.lastRamFree >= 0 ? fmtMB(st.lastRamFree) + " free" : "") + (st.lastCommit >= 0 ? ", " + Math.round(st.lastCommit) + "% of memory + page file committed" : "") + ")." : "The exit code means Windows had no memory left to give (" + hex(errCode) + ").";
+      why = exhaust ? "Windows recorded that it was running out of memory when the game ended." : tag("oom").length ? "The game's own log says so: “" + clip(tag("oom").slice(-1)[0].text, 220) + "”" : ramTight ? "Memory was almost full when it crashed (" + (st.lastRamFree >= 0 ? fmtMB(st.lastRamFree) + " free" : "") + (st.lastCommit >= 0 ? ", " + Math.round(st.lastCommit) + "% of memory + page file committed" : "") + ")." : "The exit code means Windows had no memory left to give (" + hex(errCode) + ").";
       if (st.peakPm) why += " The game itself was using " + fmtMB(st.lastPm || st.peakPm) + ".";
       tip("Close other programs before playing (browsers are the usual culprit).");
       tip("Let Windows manage the page file (System > About > Advanced system settings > Performance > Advanced > Virtual memory: “Automatically manage”), and keep free space on that drive.");
@@ -197,7 +206,7 @@
       if (!mod || mod.kind === "game" || mod.kind === "windows" || mod.kind === "engine" || mod.kind === "other") { tip("Verify the game's files in its launcher, and remove mods for a test."); tip("Turn off overlays and background tools, then update the graphics driver."); tip("If it keeps crashing the same way, send this report to the game's support: the crash is most likely a bug on their side."); }
     } else if (code !== 0) {
       kind = "error"; title = "The game ended with an error code";
-      why = "It closed with code " + code + (code > 255 ? " (" + hex(code) + ")" : "") + " and Windows recorded no crash. " + (code === 1 ? "Code 1 is also what you get when a program is ended from Task Manager or closed by its launcher." : code === 3 ? "Code 3 usually means the game called its emergency stop (abort)." : "That is the game's own code: it decided to stop.") + (tag("crash").length ? " Its log has an error near the end: “" + tag("crash").slice(-1)[0].text.slice(0, 160) + "”" : "");
+      why = "It closed with code " + code + (code > 255 ? " (" + hex(code) + ")" : "") + " and Windows recorded no crash. " + (code === 1 ? "Code 1 is also what you get when a program is ended from Task Manager or closed by its launcher." : code === 3 ? "Code 3 usually means the game called its emergency stop (abort)." : "That is the game's own code: it decided to stop.") + (tag("crash").length ? " Its log has an error near the end: “" + clip(tag("crash").slice(-1)[0].text, 220) + "”" : "");
       if (tag("anticheat").length) tip("The anti-cheat reported a problem (see the log lines): repair it and close tools it may object to.");
       if (tag("net").length) tip("The log shows the connection dropping just before it ended.");
       tip("Look at the last lines of the game's log in this report: games usually write why they stopped.");
@@ -212,7 +221,7 @@
     }
     if (kind === "normal" && loud.length) {
       kind = "crash"; title = "The game crashed (its own crash reporter caught it)";
-      why = "Windows saw the game close without an error, but the game's log ends with a crash: " + String(loud[loud.length - 1].text).slice(0, 220);
+      why = "Windows saw the game close without an error, but the game's log ends with a crash: " + clip(loud[loud.length - 1].text, 260);
       find("bad", "Crash written in the game's log", loud.slice(-3).map((h) => (h.file ? h.file + ": " : "") + h.text).join("\n"));
       tip("Verify the game's files in its launcher, and remove mods for a test."); tip("Turn off overlays and background tools, then update the graphics driver.");
     }
@@ -242,10 +251,10 @@
     const home = linux ? (sys.disks || []).filter((d) => d.name === "/" || (dir && (dir + "/").startsWith(d.name.replace(/\/$/, "") + "/"))).sort((a, b) => b.name.length - a.name.length).slice(0, 1).concat((sys.disks || []).filter((d) => d.name === "/")) : null;
     for (const d of linux ? [...new Set(home)] : sys.disks || []) if (d.freeGB < 6 && (linux || d.name[0] === "C" || (dir && dir[0].toUpperCase() === d.name[0]))) { find("warn", "Drive " + d.name + " is almost full", d.freeGB + " GB free. Windows and games need room for the page file, shader caches and saves."); tip("Free some space on " + d.name); }
     if (gpu0 && gpu0.driverDate) { const m = /(\d{1,2})-(\d{1,2})-(\d{4})/.exec(gpu0.driverDate); if (m) { const age = ((r.end || Date.now()) - new Date(+m[3], +m[1] - 1, +m[2]).getTime()) / 86400000; if (age > 300) { find("info", "The graphics driver is " + Math.round(age / 30) + " months old", gpu0.name + " · driver " + gpu0.driver + " from " + gpu0.driverDate + "."); if (kind !== "normal") tip("Update the graphics driver."); } } }
-    if (sxs) find("bad", "A runtime the game needs is missing or broken", (sxs.message || "").split("\n")[0].slice(0, 300));
+    if (sxs) find("bad", "A runtime the game needs is missing or broken", clip((sxs.message || "").split("\n")[0], 300));
     if (dotnet) find("bad", "The .NET runtime reported the error", (dotnet.message || "").slice(0, 600));
-    if (tag("files").length && kind !== "normal") { find("warn", "The log mentions damaged or missing files", "“" + tag("files").slice(-1)[0].text.slice(0, 200) + "”"); tip("Verify the game's files in its launcher."); }
-    if (tag("driver").length) find("warn", "The log mentions the driver or hardware support", "“" + tag("driver").slice(-1)[0].text.slice(0, 200) + "”");
+    if (tag("files").length && kind !== "normal") { find("warn", "The log mentions damaged or missing files", "“" + clip(tag("files").slice(-1)[0].text, 240) + "”"); tip("Verify the game's files in its launcher."); }
+    if (tag("driver").length) find("warn", "The log mentions the driver or hardware support", "“" + clip(tag("driver").slice(-1)[0].text, 240) + "”");
     const ov = (r.others || []).filter(Boolean);
     if (ov.length && (kind === "crash" || kind === "gpu" || kind === "hang")) find("info", "Running at the same time", ov.join(", ") + ". Overlays and tuning tools hook into games; closing them is a quick test.");
     if ((kind === "crash" || kind === "hang" || kind === "error") && !dumps.length && r.platform !== "android" && !linux && !(r.localDumps && r.localDumps.on)) find("info", "No crash dump was saved", "Windows can keep a small crash dump for this game, which shows exactly where it crashed. Turn it on for this game on the Games tab.");
@@ -307,7 +316,7 @@
     L.push(a.why.slice(0, 400));
     const f = a.facts.filter(([k]) => k !== "Played for").slice(0, 5).map(([k, v]) => k + ": " + v); if (f.length) L.push("> " + f.join("\n> "));
     L.push("PC: " + [sys.cpu, sys.ramMB ? fmtMB(sys.ramMB) + " RAM" : "", gpu ? gpu.name + (gpu.driver ? " (driver " + gpu.driver + ")" : "") : "", [sys.os, sys.osVersion, sys.osBuild].filter(Boolean).join(" ")].filter(Boolean).join(" · "));
-    const hits = (r.logHits || []).slice(-6).map((h) => h.text.slice(0, 160).replace(/`/g, "'"));
+    const hits = (r.logHits || []).slice(-6).map((h) => clip(h.text, 220).replace(/`/g, "'"));
     let out = L.join("\n");
     if (hits.length) { let block = "\n```\n"; for (const h of hits) { if ((out + block + h + "\n```").length > 1900) break; block += h + "\n"; } out += block + "```"; }
     return (out + "\n-# from aGoldenDiagnose").slice(0, 1990);

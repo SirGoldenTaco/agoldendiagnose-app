@@ -4,6 +4,13 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.61–1.66 - 2026-11-27
+
+- **Fixed: "Update available" but no way to update.** The row at the top only shows the **Check for updates** button, and the line holding the real **Update** button was folded away, so the button flashed "Update available" and nothing could be pressed. The button itself now becomes **Update to v1.66** (for example) when a new version is waiting; pressing it shows the update screen as before, then the download progress and "Installing… reopening". `web/common.js`.
+- **Fixed: nothing at the top can stay hidden any more.** What the top row folds away (an empty box, a repeat of the name and version) now comes back as soon as the app shows a button or a message in it again, and the text-size row at the bottom of the page always has room below it, so a bar fixed to the bottom of the window can't cover it. Checked at 11 window shapes, from a phone to an ultrawide, and at 150% text size. `web/index.html`.
+- **Updates at the bottom of Settings** (new): **Check for updates** and **Force update** are always the last thing in Settings. **Force update** downloads the newest version and installs it again even when it's the one you have, which helps when an update got stuck; it asks you to press it a second time first. `web/index.html`.
+- **Fixed: Windows' messages were cut off mid-word**, like "…was recently used to connect to th". Messages from Windows' log and from a game's own log now end at the end of a sentence, or at a whole word followed by "…", and longer ones fit. `desktop/pc.js`, `web/analyze.js`.
+
 ## 1.58–1.60 - 2026-11-27
 
 - **Explain each report by itself** (new, off unless you switch it on): **Settings → AI → Explain each report by itself**. The first time a crash report is opened, its explanation is asked for right away from whichever AI is set up there, instead of pressing **✨ Explain**. Reports of games that closed normally are left alone. `web/diagnose.js`, `web/index.html`.

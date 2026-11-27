@@ -483,6 +483,22 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
     var slot = document.getElementById("textsize-slot") || document.getElementById("settings") || document.body;
     slot.appendChild(d);
     apply(false);
+    /* agClearBottom: a bar fixed to the bottom of the window (the tabs on a phone) must never sit over the last things on
+       the page, this row included: the page gets room below it as tall as that bar, at every window size. */
+    var clearT = 0;
+    function clearBottom() {
+      clearT = 0; var H = window.innerHeight, W = window.innerWidth, need = 0, L = document.querySelectorAll("body > *, nav, footer, [class*=nav], [class*=tabbar], [class*=bottom]"), i, e, r, cs;
+      for (i = 0; i < L.length; i++) { e = L[i]; if (d.contains(e) || e.contains(d)) continue; cs = getComputedStyle(e);
+        if (cs.position !== "fixed" && cs.position !== "sticky") continue; if (cs.display === "none" || cs.visibility === "hidden") continue;
+        r = e.getBoundingClientRect(); if (r.height < 20 || r.height > H / 2 || r.width < W / 2 || r.bottom < H - 4 || r.top < H / 2) continue;
+        need = Math.max(need, r.height); }
+      var z = 1, x; for (x = d.parentNode; x && x.nodeType === 1; x = x.parentNode) z *= parseFloat(getComputedStyle(x).zoom) || 1;
+      var want = need ? Math.ceil(need / z + 12) + "px" : "";
+      if (d.style.marginBottom !== want) d.style.marginBottom = want;
+    }
+    var later = function () { if (!clearT) clearT = setTimeout(clearBottom, 120); };
+    clearBottom(); window.addEventListener("resize", later); setTimeout(clearBottom, 1500);
+    new MutationObserver(later).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
   }
   apply(false);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bar); else bar();
@@ -546,7 +562,7 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
       t = b.textContent.replace(/\s+/g, " ").trim();
       var isUpd = /^check for updates$/i.test(t) || /^(rechercher|vérifier) les mises à jour$/i.test(t), isSet = /^⚙\s*(settings|paramètres|réglages)$/i.test(t);
       if (!isUpd && !isSet) continue;
-      if (b.closest("#editor,#vEdit,dialog,.modal,[role=dialog]")) continue;
+      if (b.closest("#editor,#vEdit,dialog,.modal,[role=dialog],#ag-upd")) continue;      // (the Updates card in Settings keeps its own buttons)
       var from = b.parentNode; b.setAttribute("data-agtop", "1");
       b.style.cssText += ";margin:0;font:600 13px/1.2 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:7px 12px;border-radius:9px;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.45);cursor:pointer;width:auto;min-width:0;box-shadow:none";
       // a page that redraws makes a new button: the old copy up here goes
@@ -561,20 +577,35 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
       if (from) leftovers.push(from);
       moved = true;
     }
-    // the boxes the buttons left: hidden once nothing visible is left in them (a version line the bar shows already goes too)
-    for (var q = 0; q < leftovers.length; q++) {
-      for (var k = 0, e = leftovers[q]; e && e !== document.body && k < 3; k++, e = e.parentNode) {
-        if (e.style.display === "none") break;
-        var live = false, C = e.querySelectorAll("button,input,select,textarea,img,svg,canvas,video");
-        for (var c = 0; c < C.length && !live; c++) if (C[c].offsetParent !== null || C[c].getClientRects().length) live = true;
-        if (live) break;
-        var txt = (e.innerText || "").replace(/\s+/g, " ").trim();
-        if (!txt || new RegExp("^" + NAME + "( web| \\d[\\d.]*| \\?)?( ·.*)?$", "i").test(txt) || /^version \?/i.test(txt)) e.style.display = "none"; else break;
-      }
-    }
+    fold();
     return moved;
   }
   var leftovers = [];
+  /* A control the app means to show: nothing between it and the box hides it (what this bar folded away doesn't count). */
+  function off(e) { return !e.hasAttribute("data-aghid") && (e.hidden || getComputedStyle(e).display === "none"); }
+  function wants(box) {
+    var C = box.querySelectorAll("button,input:not([type=hidden]),select,textarea,img,svg,canvas,video,a[href]"), c, e, ok;
+    for (c = 0; c < C.length; c++) { ok = true; for (e = C[c]; e && e !== box; e = e.parentNode) if (off(e)) { ok = false; break; } if (ok) return true; }
+    return false;
+  }
+  function shownText(box) {                  // the words the box would show, leaving out what is hidden inside it
+    var w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), n, e, out = "", ok;
+    while ((n = w.nextNode())) { ok = true; for (e = n.parentNode; e && e !== box; e = e.parentNode) if (off(e) || e.hasAttribute("data-agver")) { ok = false; break; } if (ok) out += " " + n.textContent; }
+    return out.replace(/\s+/g, " ").trim();
+  }
+  /* The boxes the moved buttons left: folded away while nothing in them is left to see (an empty card, a repeat of the
+     name and version), and brought back as soon as the app shows something in them again (an Update button, a message). */
+  function fold() {
+    for (var q = 0; q < leftovers.length; q++) {
+      for (var k = 0, e = leftovers[q]; e && e !== document.body && k < 3; k++, e = e.parentNode) {
+        var mine = e.hasAttribute("data-aghid");
+        if (!mine && off(e)) break;                       // the app hid it itself
+        var txt = shownText(e), empty = !wants(e) && (!txt || new RegExp("^" + NAME + "( web| \\d[\\d.]*| \\?)?( ·.*)?$", "i").test(txt) || /^version \?/i.test(txt));
+        if (empty) { if (!mine) { e.setAttribute("data-aghid", e.style.display || ""); e.style.display = "none"; } }
+        else { if (mine) { e.style.display = e.getAttribute("data-aghid"); e.removeAttribute("data-aghid"); } break; }
+      }
+    }
+  }
   function scan(d) {
     var L = document.querySelectorAll("h1"), i, e, m, t;
     for (i = 0; i < L.length; i++) { e = L[i];    // the page's own copy of the name, when it is nothing but the name
@@ -591,7 +622,12 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
       if (!m) continue;
       ver = m[1].replace(/\.0$/, "");
       if (rest) { e.textContent = rest.charAt(0).toUpperCase() + rest.slice(1); if (e.style.display === "none") { e.style.display = ""; if (e.parentNode && e.parentNode.style) e.parentNode.style.display = ""; } }
-      else { e.style.display = "none"; par = e.parentNode; if (par && par !== document.body && par.children.length === 1 && !par.textContent.replace(e.textContent, "").trim()) par.style.display = "none"; } }
+      else { e.style.display = "none"; e.setAttribute("data-agver", "1"); par = e.parentNode; if (par && par !== document.body && par.children.length === 1 && !par.textContent.replace(e.textContent, "").trim()) { par.style.display = "none"; par.setAttribute("data-agverp", "1"); } } }
+    var V = document.querySelectorAll("[data-agver]");
+    for (i = 0; i < V.length; i++) { e = V[i]; t = e.textContent.trim();
+      if (!t || re.test(t) || /^v(?:ersion)?\s*\d+(?:\.\d+)+$/i.test(t)) continue;
+      e.style.display = ""; e.removeAttribute("data-agver"); par = e.parentNode;
+      if (par && par.hasAttribute && par.hasAttribute("data-agverp")) { par.style.display = ""; par.removeAttribute("data-agverp"); } }
     if (ver) { d.querySelector(".agv").textContent = "v" + ver; d.querySelector(".agv").style.display = ""; }
   }
   function bar() {
@@ -610,10 +646,92 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
     window.addEventListener("resize", function () { place(d); });
     new MutationObserver(function () { place(d); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });   // text size changed
     var t = 0;
-    new MutationObserver(function () { if (t) return; t = setTimeout(function () { t = 0; scan(d); topRow(d); if (document.body.firstChild !== d) document.body.insertBefore(d, document.body.firstChild); place(d); }, 150); })
-      .observe(document.body, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(function (ms) { if (t) return;
+      for (var i = 0, any = false; i < ms.length && !any; i++) any = ms[i].type !== "attributes" || !(d.contains(ms[i].target) || ms[i].target.hasAttribute("data-aghid") || ms[i].target.hasAttribute("data-agver") || ms[i].target.hasAttribute("data-agverp"));
+      if (!any) return; t = setTimeout(function () { t = 0; scan(d); topRow(d); if (document.body.firstChild !== d) document.body.insertBefore(d, document.body.firstChild); place(d); }, 150); })
+      .observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["hidden", "style", "class"] });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bar); else bar();
+})();
+</script>
+<!-- Updates card: "Check for updates" and "Force update", always at the bottom of Settings. -->
+<script id="ag-updcard">
+(function () {
+  var APP = (document.querySelector("script[data-agname]") || { getAttribute: function () { return document.title; } }).getAttribute("data-agname") || document.title || "";
+  var FR = /^fr/i.test(document.documentElement.lang || "");
+  var T = FR ? { h: "Mises à jour", chk: "Rechercher les mises à jour", force: "Forcer la mise à jour", sure: "Toucher encore pour réinstaller", why: "Forcer réinstalle la toute dernière version, même si c'est déjà celle-ci (utile quand une mise à jour est restée bloquée).", busy: "Un instant…", top: "La réponse s'affiche en haut de la fenêtre.", fail: "Ça n'a pas marché : " }
+                 : { h: "Updates", chk: "Check for updates", force: "Force update", sure: "Tap again to reinstall it", why: "Force update downloads the newest version and installs it again, even when it's the one you have (handy when an update got stuck).", busy: "One moment…", top: "The answer shows at the top of the window.", fail: "That didn't work: " };
+  function has(n) { try { return typeof window[n] !== "undefined" || eval("typeof " + n + " !== 'undefined'"); } catch (e) { return false; } }
+  function g(n) { try { return eval(n); } catch (e) { return undefined; } }       // the app's own top-level names (let/const included)
+  function note(r) { return r && typeof r === "object" ? (r.note || r.message || (r.ok === false ? T.fail + (r.error || "") : "")) : typeof r === "string" ? r : ""; }
+  function topButton() {
+    var L = document.querySelectorAll("button"), i, t;
+    for (i = 0; i < L.length; i++) { if (L[i].closest("#ag-upd")) continue; t = L[i].textContent.replace(/\s+/g, " ").trim(); if (/^check for updates$|^(rechercher|vérifier) les mises à jour$|^update to v/i.test(t)) return L[i]; }
+    return null;
+  }
+  /* each app's own way to check and to install */
+  async function check() {
+    var own = window.agUpdates;
+    if (own && own.check) return note(await own.check());
+    if (has("checkUpdates") && has("NATIVE") && has("updUI")) { await g("checkUpdates")(true); return g("updUI").txt ? g("updUI").txt.textContent : ""; }
+    var b = topButton(); if (b) { b.click(); return T.top; }
+    if (window.ptrAction) { await window.ptrAction(); return ""; }
+    if (window.native && native.checkUpdate) { var r = await native.checkUpdate(); return r && r.ok ? (r.available ? "Version " + r.latest + (FR ? " est disponible." : " is available.") : (FR ? "Vous avez la dernière version (" : "You have the newest version (") + r.current + ").") : T.fail + ((r && r.error) || ""); }
+    return T.fail + "no update check in this copy.";
+  }
+  async function force() {
+    var own = window.agUpdates;
+    if (own && own.force) return note(await own.force());
+    if (has("installUpdate") && has("NATIVE") && has("updUI")) {
+      var N = g("NATIVE"), U = g("updUI");
+      if (!N.kind) return FR ? "Les mises à jour passent par l'app Windows ou Android." : "Updates come through the Windows or Android app.";
+      var r = (await N.checkUpdate()) || { ok: false };
+      if (!r.ok) return T.fail + (r.error === "no-token" ? "update checks aren't set up in this build." : "couldn't reach GitHub.");
+      U.latest = r.latest; U.info = r.info || null; U.current = r.current; U.availNow = true;
+      await g("installUpdate")(); return U.txt ? U.txt.textContent : "";
+    }
+    if (window.native && native.checkUpdate && native.installUpdate) {
+      var c = await native.checkUpdate(); if (!c || !c.ok) return T.fail + ((c && c.error) || "couldn't reach GitHub.");
+      var x = await native.installUpdate(); return x && x.ok ? (FR ? "Installation… l'app se rouvre d'elle-même." : "Installing… the app reopens by itself.") : T.fail + ((x && x.error) || "");
+    }
+    return T.fail + "this copy can't install updates.";
+  }
+  /* where Settings is: the page around the Text size row, or the usual names */
+  function settingsRoot() {
+    var s = document.getElementById("textsize-slot"), e;
+    if (s && s.closest) { e = s.closest("section,[id^=tab-],[id^=page-],[id^=view-],[id$=Settings],[id$=settings],[id=settings],[id=set],.page,.view,.tabpage"); if (e && e !== document.body) return e; }
+    var ids = ["tab-set", "tab-settings", "settings", "page-settings", "view-settings", "viewSettings", "set", "setPage", "pane-settings", "sec-settings"];
+    for (var i = 0; i < ids.length; i++) { e = document.getElementById(ids[i]); if (e) return e; }
+    e = document.querySelector("[data-page=settings],[data-view=settings],[data-tab-page=settings],[data-pane=app],[data-pane=settings],[data-pane=set]"); if (e) return e;
+    if (s) { e = s.closest(".card"); if (e && e.parentNode && e.parentNode !== document.body) return e.parentNode; }      // Settings drawn by the app's own code (the box around its cards)
+    return null;
+  }
+  function card() {
+    var c = document.createElement("div"); c.className = "card"; c.id = "ag-upd";
+    c.innerHTML = '<div class="sec" style="margin-top:0">' + T.h + '</div><div class="ag-row" style="padding-top:2px"><div class="ag-t"><span id="ag-upd-v"></span><small>' + T.why + '</small></div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="ghost small" id="ag-upd-c" style="flex:1 1 180px;margin:0">' + T.chk + '</button><button type="button" class="ghost small" id="ag-upd-f" style="flex:1 1 180px;margin:0">' + T.force + '</button></div>' +
+      '<div id="ag-upd-m" style="margin-top:8px;font-size:13px;opacity:.85;min-height:1em"></div>';
+    var m = c.querySelector("#ag-upd-m"), bc = c.querySelector("#ag-upd-c"), bf = c.querySelector("#ag-upd-f"), armed = 0;
+    function say(t) { m.textContent = t || ""; }
+    bc.onclick = async function () { bc.disabled = true; say(T.busy); try { say(await check()); } catch (e) { say(T.fail + (e && e.message || e)); } bc.disabled = false; };
+    bf.onclick = async function () {
+      if (!armed) { armed = setTimeout(function () { armed = 0; bf.textContent = T.force; }, 4000); bf.textContent = T.sure; return; }
+      clearTimeout(armed); armed = 0; bf.textContent = T.force; bf.disabled = true; say(T.busy);
+      try { say(await force()); } catch (e) { say(T.fail + (e && e.message || e)); } bf.disabled = false;
+    };
+    return c;
+  }
+  function version() { var v = document.querySelector("#agname .agv"); return v && v.textContent ? (FR ? "Version installée : " : "You have ") + v.textContent : ""; }
+  var busyFix = 0;
+  function place() {
+    var root = settingsRoot(); if (!root) return;
+    var c = document.getElementById("ag-upd");
+    if (!c) c = card();
+    var v = c.querySelector("#ag-upd-v"); if (v) v.textContent = version();
+    if (c.parentNode !== root || root.lastElementChild !== c) { busyFix++; root.appendChild(c); }      // always the last thing in Settings
+  }
+  function go() { place(); var t = 0; new MutationObserver(function () { if (t) return; t = setTimeout(function () { t = 0; place(); }, 200); }).observe(document.body, { childList: true, subtree: true }); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
 })();
 </script>
 </body>
