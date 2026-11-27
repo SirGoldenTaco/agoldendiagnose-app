@@ -13,6 +13,30 @@ const badge = (k) => { const b = el("span", "badge k-" + k, KIND[k] || k); retur
 const btn = (cls, text, fn, title) => { const b = el("button", cls, text); b.type = "button"; if (title) b.title = title; b.onclick = guard(fn); return b; };
 
 let ST = { ok: false, helper: false, games: [], reports: [], settings: {}, ignore: [] };
+/* A search box on every list that can get long (6 or more entries): it filters the entries as you type (every word must
+ * appear). What you typed, and the typing cursor, stay when the app redraws the list. */
+const LSQ = {}; let LSFOCUS = "";
+function listSearch(box, itemSel, key, placeholder) {
+  const items = Array.from(box.querySelectorAll(":scope > " + itemSel));
+  let inp = box.querySelector(":scope > input.lsearch"), none = box.querySelector(":scope > .lsnone");
+  if (items.length < 6 && !LSQ[key]) { if (inp) inp.remove(); if (none) none.remove(); return; }
+  if (!inp) {
+    inp = document.createElement("input"); inp.type = "search"; inp.className = "lsearch"; inp.placeholder = placeholder || "Search"; inp.autocomplete = "off"; inp.spellcheck = false;
+    box.insertBefore(inp, items[0] || null);
+    none = el("div", "kv lsnone"); none.hidden = true; box.insertBefore(none, items[0] ? items[0] : null);
+  }
+  inp.value = LSQ[key] || "";
+  const apply = () => {
+    const words = String(inp.value).toLowerCase().split(/\s+/).filter(Boolean); let shown = 0;
+    for (const it of items) { const ok = !words.length || words.every((w) => it.textContent.toLowerCase().includes(w)); it.style.display = ok ? "" : "none"; if (ok) shown++; }
+    none.hidden = shown > 0 || !words.length; none.textContent = "Nothing matches “" + inp.value.trim() + "”.";
+  };
+  inp.oninput = () => { LSQ[key] = inp.value; apply(); };
+  inp.onfocus = () => (LSFOCUS = key); inp.onblur = () => setTimeout(() => { if (LSFOCUS === key && inp.isConnected) LSFOCUS = ""; }, 0);   // a redraw removes the box: that is not you leaving it
+  inp.onkeydown = (e) => { if (e.key === "Escape" && inp.value) { e.stopPropagation(); inp.value = ""; LSQ[key] = ""; apply(); } };
+  apply();
+  if (LSFOCUS === key) { inp.focus({ preventScroll: true }); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch (e) {} }
+}
 let repFilter = "", repQuery = "", repOpen = false, OPEN = null;           // OPEN: the report being read
 
 /* ---------------------------------------------------------------- Games */
@@ -52,10 +76,12 @@ function drawGames() {
     acts.appendChild(btn("ghost small", "Remove", async () => { await N.game({ key: g.key, remove: true }); toast(g.name + " moved to Hidden. It isn't watched any more."); refresh(); }));
     c.appendChild(acts); box.appendChild(c);
   }
+  listSearch(box, ".g", "games", "Search games");
   $("ignoredCard").hidden = !ST.ignore.length; const ig = $("ignored"); ig.textContent = "";
   const igOpen = store.get("hiddenOpen", false) === true; $("ignoredBody").hidden = !igOpen; $("ignoredHead").setAttribute("aria-expanded", String(igOpen)); $("ignoredArrow").style.transform = igOpen ? "rotate(90deg)" : ""; $("ignoredTitle").textContent = "Hidden (" + ST.ignore.length + ")";
   $("ignoredHead").onclick = () => { store.set("hiddenOpen", !igOpen); drawGames(); };
   for (const k of ST.ignore) { const r = el("div", "frow"); r.appendChild(el("div", "t", k)); r.appendChild(btn("ghost small", "Watch again", async () => { await N.unignore(k); refresh(); })); ig.appendChild(r); }
+  listSearch(ig, ".frow", "hidden", "Search hidden programs");
 }
 function paintLive(box, s) {
   box.textContent = "";
@@ -162,7 +188,7 @@ function drawReports() {
   const live = list.filter((r) => !rarch[r.id]), gone = list.filter((r) => rarch[r.id]).sort((a, b) => rarch[b.id] - rarch[a.id]);
   const OLD = 30 * 86400000, old = live.filter((r) => Date.now() - r.end > OLD);
   const row = (r, archived) => {
-    const w = el("div"); w.style.position = "relative";
+    const w = el("div", "rw"); w.style.position = "relative";
     const b = el("button", "rrow"); b.type = "button"; b.appendChild(badge(r.kind)); b.style.paddingRight = archived ? "104px" : "44px"; if (archived) b.style.opacity = ".7";
     const t = el("div", "t"); t.appendChild(el("b", null, r.game + " · " + r.title)); t.appendChild(el("small", null, when(r.end) + " · played " + D.fmtDur(r.end - r.start) + (r.files ? " · " + r.files + " file" + (r.files > 1 ? "s" : "") + " collected" : "") + (archived ? " · archived " + when(rarch[r.id]) : "")));
     b.appendChild(t); b.onclick = guard(() => openReport(r.id)); w.appendChild(b);
@@ -179,12 +205,14 @@ function drawReports() {
   }
   if (!live.length && gone.length) { const e = el("div", "empty", "Every report is in the archive below."); box.appendChild(e); }
   for (const r of live) box.appendChild(row(r, false));
+  listSearch(box, ".rw", "reports", "Search reports (game, kind of problem, date…)");
   if (gone.length) {
     const ad = el("details", "card"); ad.style.marginTop = "10px"; ad.open = store.get("repArchOpen", false) === true;
     ad.addEventListener("toggle", () => store.set("repArchOpen", ad.open));
     const as = el("summary", "kv", "Archived reports (" + gone.length + ")"); as.style.cursor = "pointer"; ad.appendChild(as);
     const note = el("div", "kv", "Hidden from the list, nothing deleted: open one, or bring it back."); note.style.margin = "6px 0"; ad.appendChild(note);
     for (const r of gone) ad.appendChild(row(r, true));
+    listSearch(ad, ".rw", "repArch", "Search archived reports");
     const all = btn("ghost small", "Bring them all back", () => setArch((a) => { for (const r of gone) delete a[r.id]; })); all.style.marginTop = "6px"; ad.appendChild(all);
     box.appendChild(ad);
   }

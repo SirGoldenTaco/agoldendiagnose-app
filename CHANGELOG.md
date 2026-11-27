@@ -4,6 +4,10 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.55–1.56 - 2026-11-27
+
+- **Search on every long list** (new): the lists that can get long now have a search box at the top once they hold 6 or more entries: Games and its Hidden list, Reports and Archived reports, the PC tab's What went wrong and Check my PC, a problem's detail page (its problems and Windows' log), and each of their Dismissed / ignored lists. Typing shows only the entries that contain every word you typed, and says so when nothing matches; Esc clears it. What you typed stays put while the app refreshes the list. `web/diagnose.js` (`listSearch`), `web/pc.js`, `web/index.html`.
+
 ## 1.54 - 2026-11-27
 
 - **File names an older game can't read** (new, for every game; it replaces the GTA San Andreas check from 1.53): when a game closes with an error, the app checks whether it is one of the older programs that read file names with Windows' older "language for non-Unicode programs" setting (its program lists folders the older way). If it is, the app checks the game's own folder and the folders in Documents the game wrote to while it ran (its saves, mods, music…). Names with characters outside that setting (Japanese, Chinese, Korean, Cyrillic, emoji…) can't be opened by such a game, and scanning a folder that holds one can make it fail or crash: **Things to try** puts the fix first (rename them using plain letters and numbers, or switch the language for non-Unicode programs to match them) and **Also noticed** lists them. The check is exact on PCs where that setting is a Western language (English, French, Spanish, German…, the usual case); with any other setting it lists nothing rather than guessing. Games that read every name correctly are left out. The app only reads names: it doesn't rename, move or send anything. `desktop/watch.js` (`ansiNames`), `web/analyze.js`.

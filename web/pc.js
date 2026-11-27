@@ -270,10 +270,12 @@
       into.appendChild(d);
     };
     for (const i of list.slice(0, 120)) drawOne(i, false, box);
+    listSearch(box, "details.inc", "pcInc", "Search what went wrong");
     if (gone.length) {
       const f = el("details", "okbox"); f.open = store.get("pcGoneOpen", false) === true; f.addEventListener("toggle", () => store.set("pcGoneOpen", f.open));
       f.appendChild(el("summary", null, "Dismissed (" + gone.length + ")"));
       for (const i of gone.slice(0, 120)) drawOne(i, true, f);
+      listSearch(f, "details.inc", "pcIncGone", "Search dismissed");
       f.appendChild(btn("ghost small", "Bring them all back", async () => { await P.pc("dismiss", { ids: gone.map((i) => i.id), on: false }); await load(); }));
       box.appendChild(f);
     }
@@ -311,7 +313,8 @@
     };
     const shown = h.items.filter((it) => it.sev !== "ok" && !ign[keyOf(it)]), hidden = h.items.filter((it) => it.sev !== "ok" && ign[keyOf(it)]);
     for (const it of shown) box.appendChild(row(it, false));
-    if (hidden.length) { const d = el("details", "okbox"); d.appendChild(el("summary", null, hidden.length + " ignored")); for (const it of hidden) d.appendChild(row(it, true)); box.appendChild(d); }
+    listSearch(box, ".hrow", "health", "Search the findings");
+    if (hidden.length) { const d = el("details", "okbox"); d.appendChild(el("summary", null, hidden.length + " ignored")); for (const it of hidden) d.appendChild(row(it, true)); box.appendChild(d); listSearch(d, ".hrow", "healthIgn", "Search ignored findings"); }
     void area;
   }
 
@@ -386,8 +389,9 @@
     if (!incLive.length) pc.appendChild(el("p", "kv", incGone.length ? "Nothing new: " + incGone.length + " dismissed below." : "Nothing went wrong with it since the watching started."));
     const incRow = (i, dismissed, into) => { const r = el("details", "inc s-" + i.sev); r.open = openInc === i.id; r.ontoggle = () => { if (r.open) openInc = i.id; }; const sm = el("summary"); sm.appendChild(el("span", "badge b-" + i.sev, SEV[i.sev][0])); sm.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : ""))); if (!i.open) sm.appendChild(dismissBtn(dismissed, () => P.pc("dismiss", { ids: [i.id], on: !dismissed }))); sm.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString())); r.appendChild(sm); if (i.detail) r.appendChild(el("p", null, i.detail)); netFindings(i, r); into.appendChild(r); };
     for (const i of incLive.slice(0, 25)) incRow(i, false, pc);
+    listSearch(pc, "details.inc", "detInc", "Search problems");
     if (incLive.filter((i) => !i.open).length > 1) pc.appendChild(btn("ghost small", "Dismiss them all", async () => { await P.pc("dismiss", { ids: incLive.filter((i) => !i.open).map((i) => i.id), on: true }); await load(); const nd = await P.pc("detail", { which: w }); if (DET.which === w) { DET.data = nd; drawDetail(); } }));
-    if (incGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + incGone.length + ")")); for (const i of incGone.slice(0, 25)) incRow(i, true, f); pc.appendChild(f); }
+    if (incGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + incGone.length + ")")); for (const i of incGone.slice(0, 25)) incRow(i, true, f); listSearch(f, "details.inc", "detIncGone", "Search dismissed"); pc.appendChild(f); }
     box.appendChild(pc);
     // Windows' own log: entries can be dismissed too (remembered on this PC)
     const evKey = (e) => e.t + "|" + e.source, evHid = store.get("evHidden", {}) || {};
@@ -397,8 +401,9 @@
     if (!evLive.length) ev.appendChild(el("p", "kv", evGone.length ? "Nothing new: " + evGone.length + " dismissed below." : "Windows wrote nothing about it."));
     const evRow = (e, dismissed, into) => { const r = el("div", "hrow s-" + e.sev); r.appendChild(el("span", "badge b-" + e.sev, SEV[e.sev] ? SEV[e.sev][0] : "Note")); const t = el("div", "t"), hd = el("div", "row"); hd.style.cssText = "gap:8px;align-items:flex-start"; const tb = el("b", "grow", e.title); hd.appendChild(tb); hd.appendChild(btn("ghost small", dismissed ? "Bring back" : "✕", () => setEv((h) => { if (dismissed) delete h[evKey(e)]; else h[evKey(e)] = Date.now(); }), dismissed ? "Put it back in the list" : "Dismiss (it moves to Dismissed below)")); t.appendChild(hd); t.appendChild(el("small", null, new Date(e.t).toLocaleString() + " · " + e.source)); if (e.text) t.appendChild(el("p", null, e.text)); r.appendChild(t); into.appendChild(r); };
     for (const e of evLive.slice(0, 20)) evRow(e, false, ev);
+    listSearch(ev, ".hrow", "detEv", "Search Windows' log");
     if (evLive.length > 1) ev.appendChild(btn("ghost small", "Dismiss them all", () => setEv((h) => { for (const e of evLive) h[evKey(e)] = Date.now(); })));
-    if (evGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + evGone.length + ")")); for (const e of evGone.slice(0, 20)) evRow(e, true, f); f.appendChild(btn("ghost small", "Bring them all back", () => setEv((h) => { for (const e of evGone) delete h[evKey(e)]; }))); ev.appendChild(f); }
+    if (evGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + evGone.length + ")")); for (const e of evGone.slice(0, 20)) evRow(e, true, f); listSearch(f, ".hrow", "detEvGone", "Search dismissed"); f.appendChild(btn("ghost small", "Bring them all back", () => setEv((h) => { for (const e of evGone) delete h[evKey(e)]; }))); ev.appendChild(f); }
     box.appendChild(ev);
     // what you can do
     const tips = {
