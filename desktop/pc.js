@@ -655,8 +655,12 @@ exports.start = function (x) {
     const uri = { update: "ms-settings:windowsupdate", storage: "ms-settings:storagesense", power: "ms-settings:powersleep", backup: "ms-settings:backup", startupset: "ms-settings:startupapps", security: "windowsdefender:", troubleshoot: "ms-settings:troubleshoot", sound: "ms-settings:sound", display: "ms-settings:display", graphics: "ms-settings:display-advancedgraphics", network: "ms-settings:network-status", apps: "ms-settings:appsfeatures", about: "ms-settings:about" }[t];
     if (uri) { shell.openExternal(uri); return true; }
     const exe = { devmgmt: ["mmc.exe", ["devmgmt.msc"]], taskmgr: ["taskmgr.exe", ["/0", "/startup"]], taskmgrnow: ["taskmgr.exe", []], sysadv: ["SystemPropertiesAdvanced.exe", []], diskclean: ["cleanmgr.exe", []], netconn: ["control.exe", ["ncpa.cpl"]], eventvwr: ["mmc.exe", ["eventvwr.msc"]], reliability: ["perfmon.exe", ["/rel"]], resmon: ["resmon.exe", []], diskmgmt: ["mmc.exe", ["diskmgmt.msc"]] }[t];
-    if (exe) { execFile(path.join(sys32, exe[0]), exe[1], { windowsHide: false }, () => {}); return true; }
-    if (t === "mdsched") { shell.openPath(path.join(sys32, "MdSched.exe")); return true; }
+    // Started through "start" (Windows' own ShellExecute, like Win+R), not directly: Device Manager, Task Manager,
+    // Event Viewer and the other admin consoles ask Windows for administrator rights when they open, and a direct
+    // start is refused for them on an administrator account (error 740) without anything showing.
+    const via = (file, args) => new Promise((res) => execFile(path.join(sys32, "cmd.exe"), ["/d /c start \"\" " + [file, ...args].join(" ")], { windowsHide: true, windowsVerbatimArguments: true }, (err) => { if (err) X.alog("pc: couldn't open " + t + ": " + err.message); res(!err); }));
+    if (exe) return via(exe[0], exe[1]);
+    if (t === "mdsched") return via("MdSched.exe", []);
     return false;
   });
   ipcMain.handle("pc-ignore", (_e, a) => { const k = String((a && a.key) || ""); if (!k) return false; if (a.on) DB.ignore[k] = { at: Date.now(), title: String(a.title || "").slice(0, 200) }; else delete DB.ignore[k]; save(); return DB.ignore; });

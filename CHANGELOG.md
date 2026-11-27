@@ -4,6 +4,15 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.44 - 2026-11-26
+
+- **Fixed: “Look again” seemed to do nothing.** On a tile's page (for example Internet → Problems seen) it looked at the network card again but didn't redraw the page, and nowhere did it show that it was working. It now says “Looking…” while it reads, redraws the drop where you are and keeps it open, shows when it last looked, and tells you whether anything changed. `web/pc.js` (`lookInto`).
+- **Fixed: the buttons that open Windows' tools didn't open some of them.** Device Manager, Task Manager, Event Viewer, Disk Management, Reliability history, Resource Monitor and Windows Memory Diagnostic ask Windows for administrator rights when they open, and Windows refused to start them the way the app did it, without showing anything. They're now started the same way as from Win+R (Windows' own “start”), so they open, with Windows' usual prompt where that tool needs one. If one still can't open, the reason is written in the app's log. `desktop/pc.js` (`pc-open`).
+
+## 1.43 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.44 above.
+
 ## 1.42 - 2026-11-26
 
 - **Windows shortcuts** (new): a row on the PC tab, under the tiles, with buttons that open Windows' own tools: Device Manager, Task Manager, Startup apps, Windows Update, Network connections and settings, Display, Graphics settings, Sound, Power, Storage, Disk Management, Reliability history, Event Viewer, Resource Monitor, Advanced system settings, Installed apps, Windows Security and About this PC. It folds away (click its heading). Each tile's page also has the few that go with it (for example Network: Device Manager, Network connections, Network settings). Only this fixed list can be opened. `web/pc.js` (`quickRow`), `desktop/pc.js` (`pc-open`).

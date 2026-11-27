@@ -187,14 +187,25 @@
   }
   const netCtx = (i) => () => { const g = i.diag || {}, c = g.card || {}; return [i.title + " (" + new Date(i.at || i.t).toLocaleString() + ")", i.detail || "", ...(g.found || []), c.desc ? "Card: " + c.desc + ", " + (c.speed || "") + ", driver " + (c.driver || "") + " (" + (c.date || "") + ")" : "", ...(g.settings || []).map((x) => "Setting “" + x.n + "” = " + x.v + (x.vals && x.vals.length ? " (choices: " + x.vals.join(", ") + ")" : "")), g.allowOff ? "Allow the computer to turn off this device: " + g.allowOff : "", "Suggested:", ...(g.steps || []).map((st) => st.t + ": " + (st.s || []).join(" "))].filter(Boolean).join("\n"); };
 
+  // "Look into it" / "Look again": reads the network card again (a few seconds), then redraws wherever the drop is
+  // shown, the PC tab's list and a tile's page alike, keeping it open
+  async function lookInto(i, e) {
+    const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Looking… (a few seconds)"; }
+    const before = JSON.stringify((i.diag && i.diag.steps) || []);
+    const r = await P.pc("netdiag", { id: i.id });
+    openInc = i.id; await load();
+    if (DET.which) { const d = await P.pc("detail", { which: DET.which }); if (DET.which) { DET.data = d; drawDetail(); } }
+    toast(!r ? "It couldn't be looked into." : JSON.stringify(r.steps || []) === before ? "Looked again: same as before." : "Looked again: updated.");
+  }
   function netFindings(i, d) {
     if (i.kind !== "net" || i.open) return;
     if (i.diag) {
       if (i.diag.found && i.diag.found.length) { const f = el("div", "found"); f.appendChild(el("div", "lbl2", "What the app found")); for (const x of i.diag.found) f.appendChild(el("p", null, x)); d.appendChild(f); }
       if (i.diag.error) d.appendChild(el("p", "kv", "Part of it couldn't be read: " + i.diag.error));
       if (i.diag.steps && i.diag.steps.length) d.appendChild(stepsBox(i.diag.steps, "What to try"));
-      d.appendChild(btn("ghost small", "Look again", async () => { await P.pc("netdiag", { id: i.id }); await load(); }));
-    } else d.appendChild(btn("small", "Look into it", async (e) => { const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Looking…"; } await P.pc("netdiag", { id: i.id }); openInc = i.id; await load(); }));
+      if (i.diag.at) d.appendChild(el("p", "kv", "Looked at " + new Date(i.diag.at).toLocaleString() + "."));
+      d.appendChild(btn("ghost small", "Look again", (e) => lookInto(i, e)));
+    } else d.appendChild(btn("small", "Look into it", (e) => lookInto(i, e)));
     d.appendChild(askBox("inc:" + i.id, i.title, netCtx(i)));
   }
 
@@ -314,7 +325,7 @@
     // problems the app saw
     const pc = section("Problems seen (" + (d.incidents || []).length + ")");
     if (!(d.incidents || []).length) pc.appendChild(el("p", "kv", "Nothing went wrong with it since the watching started."));
-    for (const i of (d.incidents || []).slice(0, 25)) { const r = el("details", "inc s-" + i.sev); const sm = el("summary"); sm.appendChild(el("span", "badge b-" + i.sev, SEV[i.sev][0])); sm.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : ""))); sm.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString())); r.appendChild(sm); if (i.detail) r.appendChild(el("p", null, i.detail)); netFindings(i, r); pc.appendChild(r); }
+    for (const i of (d.incidents || []).slice(0, 25)) { const r = el("details", "inc s-" + i.sev); r.open = openInc === i.id; r.ontoggle = () => { if (r.open) openInc = i.id; }; const sm = el("summary"); sm.appendChild(el("span", "badge b-" + i.sev, SEV[i.sev][0])); sm.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : ""))); sm.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString())); r.appendChild(sm); if (i.detail) r.appendChild(el("p", null, i.detail)); netFindings(i, r); pc.appendChild(r); }
     box.appendChild(pc);
     // Windows' own log
     const ev = section("In Windows' log, last 14 days (" + (d.events || []).length + ")");
