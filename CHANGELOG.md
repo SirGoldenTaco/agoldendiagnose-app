@@ -4,6 +4,10 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.45 - 2026-11-26
+
+- **Everything that piles up can now be dismissed** (new): in **What went wrong** each entry has a **✕**, and **Dismiss all** clears the list in one go; dismissed entries wait folded under **Dismissed** at the bottom, where **Bring back** (or **Bring them all back**) returns them. Nothing is deleted (**Clear the list** still deletes). Something still going on can't be dismissed until it's over. The same ✕ and **Dismiss them all** are on each tile's page, for **Problems seen** and for the entries **In Windows' log** (those are remembered on this PC for 30 days). Questions saved under **Ask about it** have **Clear these questions**. `web/pc.js`, `web/index.html`, `desktop/pc.js` (`pc-dismiss`), `desktop/preload.js`.
+
 ## 1.44 - 2026-11-26
 
 - **Fixed: “Look again” seemed to do nothing.** On a tile's page (for example Internet → Problems seen) it looked at the network card again but didn't redraw the page, and nowhere did it show that it was working. It now says “Looking…” while it reads, redraws the drop where you are and keeps it open, shows when it last looked, and tells you whether anything changed. `web/pc.js` (`lookInto`).

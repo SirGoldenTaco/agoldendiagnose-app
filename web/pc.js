@@ -157,6 +157,7 @@
     d.open = hist.length > 0;
     d.appendChild(el("summary", null, hist.length ? "Questions about it (" + hist.length + ")" : "Something doesn't match, or a question? Ask about it"));
     for (const h of hist) { const q = el("p", "q"); q.appendChild(el("b", null, "You: ")); q.appendChild(document.createTextNode(h.q)); d.appendChild(q); const a = el("div", "a", h.a); d.appendChild(a); }
+    if (hist.length) { const c = btn("ghost small", "Clear these questions", () => { store.set("ask:" + key, []); const nd = askBox(key, title, ctx); d.replaceWith(nd); }); c.style.marginTop = "6px"; d.appendChild(c); }
     const ta = el("textarea"); ta.rows = 2; ta.placeholder = "For example: there's no “Disabled” in that list, only speeds."; d.appendChild(ta);
     const row = el("div", "row"); row.style.cssText = "gap:8px;margin-top:6px;flex-wrap:wrap";
     const out = el("div", "a"); out.hidden = true;
@@ -210,11 +211,14 @@
   }
 
   function drawIncidents() {
-    const box = $("pcInc"), list = PS ? PS.incidents : []; box.textContent = "";
-    $("pcIncNone").hidden = list.length > 0; $("pcClear").hidden = !list.length;
-    for (const i of list.slice(0, 120)) {
+    const box = $("pcInc"), all = PS ? PS.incidents : []; box.textContent = "";
+    const list = all.filter((i) => !i.dismissed || i.open), gone = all.filter((i) => i.dismissed && !i.open);
+    $("pcIncNone").hidden = list.length > 0; $("pcIncNone").textContent = gone.length ? "Nothing new: " + gone.length + " dismissed below." : "Nothing has gone wrong since the watching started."; $("pcClear").hidden = !all.length;
+    if ($("pcDismissAll")) $("pcDismissAll").hidden = list.filter((i) => !i.open).length < 2;
+    const drawOne = (i, dismissed, into) => {
       const d = el("details", "inc s-" + i.sev + (i.open ? " open" : "")); d.open = openInc === i.id; d.ontoggle = () => { if (d.open) openInc = i.id; else if (openInc === i.id) openInc = ""; };
       const s = el("summary"); s.appendChild(el("span", "badge b-" + i.sev, i.open ? "Now" : SEV[i.sev][0])); s.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : "")));
+      if (!i.open) s.appendChild(dismissBtn(dismissed, () => P.pc("dismiss", { ids: [i.id], on: !dismissed })));
       s.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString() + (i.open ? " · still going on (" + span(Date.now() - i.t) + ")" : i.end ? " · lasted " + span(i.end - i.t) : ""))); d.appendChild(s);
       if (i.detail) d.appendChild(el("p", null, i.detail));
       const facts = [];
@@ -224,8 +228,22 @@
       if (i.source) facts.push("From Windows' event log: " + i.source);
       if (facts.length) { const f = el("div", "kv"); f.style.whiteSpace = "pre-wrap"; f.textContent = "At that moment\n" + facts.join("\n"); d.appendChild(f); }
       netFindings(i, d);
-      box.appendChild(d);
+      into.appendChild(d);
+    };
+    for (const i of list.slice(0, 120)) drawOne(i, false, box);
+    if (gone.length) {
+      const f = el("details", "okbox"); f.open = store.get("pcGoneOpen", false) === true; f.addEventListener("toggle", () => store.set("pcGoneOpen", f.open));
+      f.appendChild(el("summary", null, "Dismissed (" + gone.length + ")"));
+      for (const i of gone.slice(0, 120)) drawOne(i, true, f);
+      f.appendChild(btn("ghost small", "Bring them all back", async () => { await P.pc("dismiss", { ids: gone.map((i) => i.id), on: false }); await load(); }));
+      box.appendChild(f);
     }
+  }
+  // ✕ on an entry (or "Bring back" on a dismissed one); doesn't open or close the entry it sits on
+  function dismissBtn(dismissed, fn) {
+    const b = el("button", "ghost small xbtn", dismissed ? "Bring back" : "✕"); b.type = "button"; b.title = dismissed ? "Put it back in the list" : "Dismiss (it moves to Dismissed at the bottom; nothing is deleted)";
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); Promise.resolve(fn()).then(() => load()).then(() => { if (DET.which) return P.pc("detail", { which: DET.which }).then((d) => { if (DET.which) { DET.data = d; drawDetail(); } }); }).catch((x) => toast(x.message || String(x), true)); };
+    return b;
   }
 
   function drawHealth() {
@@ -323,14 +341,24 @@
     }
     if (w === "cpu" && (T.drives || []).length) { const c = section("Drive temperatures"); c.appendChild(factGrid(T.drives.map((x) => [(x.letters ? x.letters + "  " : "") + (x.model || x.n), x.c + " °C" + (x.warn ? " (warning at " + x.warn + " °C)" : "")]))); box.appendChild(c); }
     // problems the app saw
-    const pc = section("Problems seen (" + (d.incidents || []).length + ")");
-    if (!(d.incidents || []).length) pc.appendChild(el("p", "kv", "Nothing went wrong with it since the watching started."));
-    for (const i of (d.incidents || []).slice(0, 25)) { const r = el("details", "inc s-" + i.sev); r.open = openInc === i.id; r.ontoggle = () => { if (r.open) openInc = i.id; }; const sm = el("summary"); sm.appendChild(el("span", "badge b-" + i.sev, SEV[i.sev][0])); sm.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : ""))); sm.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString())); r.appendChild(sm); if (i.detail) r.appendChild(el("p", null, i.detail)); netFindings(i, r); pc.appendChild(r); }
+    const incAll = d.incidents || [], incLive = incAll.filter((i) => !i.dismissed || i.open), incGone = incAll.filter((i) => i.dismissed && !i.open);
+    const pc = section("Problems seen (" + incLive.length + ")");
+    if (!incLive.length) pc.appendChild(el("p", "kv", incGone.length ? "Nothing new: " + incGone.length + " dismissed below." : "Nothing went wrong with it since the watching started."));
+    const incRow = (i, dismissed, into) => { const r = el("details", "inc s-" + i.sev); r.open = openInc === i.id; r.ontoggle = () => { if (r.open) openInc = i.id; }; const sm = el("summary"); sm.appendChild(el("span", "badge b-" + i.sev, SEV[i.sev][0])); sm.appendChild(el("b", null, i.title + (i.count > 1 ? "  ×" + i.count : ""))); if (!i.open) sm.appendChild(dismissBtn(dismissed, () => P.pc("dismiss", { ids: [i.id], on: !dismissed }))); sm.appendChild(el("small", null, new Date(i.at || i.t).toLocaleString())); r.appendChild(sm); if (i.detail) r.appendChild(el("p", null, i.detail)); netFindings(i, r); into.appendChild(r); };
+    for (const i of incLive.slice(0, 25)) incRow(i, false, pc);
+    if (incLive.filter((i) => !i.open).length > 1) pc.appendChild(btn("ghost small", "Dismiss them all", async () => { await P.pc("dismiss", { ids: incLive.filter((i) => !i.open).map((i) => i.id), on: true }); await load(); const nd = await P.pc("detail", { which: w }); if (DET.which === w) { DET.data = nd; drawDetail(); } }));
+    if (incGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + incGone.length + ")")); for (const i of incGone.slice(0, 25)) incRow(i, true, f); pc.appendChild(f); }
     box.appendChild(pc);
-    // Windows' own log
-    const ev = section("In Windows' log, last 14 days (" + (d.events || []).length + ")");
-    if (!(d.events || []).length) ev.appendChild(el("p", "kv", "Windows wrote nothing about it."));
-    for (const e of (d.events || []).slice(0, 20)) { const r = el("div", "hrow s-" + e.sev); r.appendChild(el("span", "badge b-" + e.sev, SEV[e.sev] ? SEV[e.sev][0] : "Note")); const t = el("div", "t"); t.appendChild(el("b", null, e.title)); t.appendChild(el("small", null, new Date(e.t).toLocaleString() + " · " + e.source)); if (e.text) t.appendChild(el("p", null, e.text)); r.appendChild(t); ev.appendChild(r); }
+    // Windows' own log: entries can be dismissed too (remembered on this PC)
+    const evKey = (e) => e.t + "|" + e.source, evHid = store.get("evHidden", {}) || {};
+    const evAll = d.events || [], evLive = evAll.filter((e) => !evHid[evKey(e)]), evGone = evAll.filter((e) => evHid[evKey(e)]);
+    const setEv = (fn) => { const h = Object.assign({}, store.get("evHidden", {}) || {}); fn(h); const keep = Date.now() - 30 * 86400000; for (const k of Object.keys(h)) if (+k.split("|")[0] < keep) delete h[k]; store.set("evHidden", h); drawDetail(); };
+    const ev = section("In Windows' log, last 14 days (" + evLive.length + ")");
+    if (!evLive.length) ev.appendChild(el("p", "kv", evGone.length ? "Nothing new: " + evGone.length + " dismissed below." : "Windows wrote nothing about it."));
+    const evRow = (e, dismissed, into) => { const r = el("div", "hrow s-" + e.sev); r.appendChild(el("span", "badge b-" + e.sev, SEV[e.sev] ? SEV[e.sev][0] : "Note")); const t = el("div", "t"), hd = el("div", "row"); hd.style.cssText = "gap:8px;align-items:flex-start"; const tb = el("b", "grow", e.title); hd.appendChild(tb); hd.appendChild(btn("ghost small", dismissed ? "Bring back" : "✕", () => setEv((h) => { if (dismissed) delete h[evKey(e)]; else h[evKey(e)] = Date.now(); }), dismissed ? "Put it back in the list" : "Dismiss (it moves to Dismissed below)")); t.appendChild(hd); t.appendChild(el("small", null, new Date(e.t).toLocaleString() + " · " + e.source)); if (e.text) t.appendChild(el("p", null, e.text)); r.appendChild(t); into.appendChild(r); };
+    for (const e of evLive.slice(0, 20)) evRow(e, false, ev);
+    if (evLive.length > 1) ev.appendChild(btn("ghost small", "Dismiss them all", () => setEv((h) => { for (const e of evLive) h[evKey(e)] = Date.now(); })));
+    if (evGone.length) { const f = el("details", "okbox"); f.appendChild(el("summary", null, "Dismissed (" + evGone.length + ")")); for (const e of evGone.slice(0, 20)) evRow(e, true, f); f.appendChild(btn("ghost small", "Bring them all back", () => setEv((h) => { for (const e of evGone) delete h[evKey(e)]; }))); ev.appendChild(f); }
     box.appendChild(ev);
     // what you can do
     const tips = {
@@ -393,6 +421,7 @@
   $("pcOutSave").onclick = guard(async () => { const r = await P.pc("outagesave", { text: $("pcOutText").textContent, name: OUT_NAME }); if (!r || !r.ok) throw new Error((r && r.error) || "It couldn't be saved."); toast("Saved in your Downloads folder, under aGoldenDiagnose."); });
   $("pcFolder").onclick = () => P.pc("folder");
   $("pcClear").onclick = guard(async () => { await P.pc("clear"); await load(); });
+  $("pcDismissAll").onclick = guard(async () => { await P.pc("dismiss", { ids: ((PS && PS.incidents) || []).filter((i) => !i.open && !i.dismissed).map((i) => i.id), on: true }); await load(); toast("Dismissed. They wait under Dismissed at the bottom."); });
   $("pcTurnOn").onclick = guard(async () => { await P.pc("settings", { on: true }); await load(); });
   P.on("pc-live", (l) => { LIVE = l; drawLive(); });
   P.on("pc-update", () => load());

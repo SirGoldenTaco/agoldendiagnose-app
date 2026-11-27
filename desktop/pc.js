@@ -663,6 +663,8 @@ exports.start = function (x) {
     if (t === "mdsched") return via("MdSched.exe", []);
     return false;
   });
+  // dismiss: hides an entry from "What went wrong" (and a tile's "Problems seen"); nothing is deleted, it can come back
+  ipcMain.handle("pc-dismiss", (_e, a) => { const ids = new Set((a && a.ids) || []), all = a && a.all; for (const i of DB.incidents) if (all || ids.has(i.id)) { if (a.on) i.dismissed = Date.now(); else delete i.dismissed; } save(); return true; });
   ipcMain.handle("pc-ignore", (_e, a) => { const k = String((a && a.key) || ""); if (!k) return false; if (a.on) DB.ignore[k] = { at: Date.now(), title: String(a.title || "").slice(0, 200) }; else delete DB.ignore[k]; save(); return DB.ignore; });
   ipcMain.handle("pc-netdiag", async (_e, a) => { const i = DB.incidents.find((x) => x.id === (a && a.id)); return i ? netDiag(i) : null; });
   ipcMain.handle("pc-detail", async (_e, a) => detail(String((a && a.which) || "")));

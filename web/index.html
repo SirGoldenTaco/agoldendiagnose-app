@@ -138,6 +138,7 @@
   .found p{margin:4px 0;line-height:1.5}
   details.todo{margin-top:6px}details.todo>summary{cursor:pointer;color:var(--gold);font-weight:600}
   .hrow.ignored{opacity:.65}
+  details.inc>summary .xbtn{margin-left:auto;padding:2px 9px;flex:none}details.inc>summary .xbtn+small{margin-left:10px}
   .stepbtns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px 22px}.stepbtns>button{display:inline-flex;width:auto;margin:0}
   details.ask{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}details.ask>summary{cursor:pointer;color:var(--dim);font-size:13.5px}
   details.ask textarea{width:100%;margin-top:8px;box-sizing:border-box;resize:vertical;font:inherit}
@@ -317,7 +318,7 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
     <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Drives</div><div id="pcDrives"></div><div class="sec">Right now</div><div id="pcTop" class="pctop"></div><div class="kv" id="pcUp" style="margin-top:8px"></div></div>
     <div class="card" style="margin-top:10px"><div class="sec" style="margin-top:0">Check my PC</div><div id="pcHealth"></div></div>
     <div class="card" style="margin-top:10px">
-      <div class="row"><div class="sec grow" style="margin:0">What went wrong</div><button type="button" class="ghost small" id="pcOutBtn" title="Every time the internet dropped, over the dates you pick: ready to send to your internet provider">Outage report</button><button type="button" class="ghost small" id="pcFolder" title="One readable log file per day, and each Check my PC result">Open the logs folder</button><button type="button" class="ghost small" id="pcClear" hidden>Clear the list</button></div>
+      <div class="row"><div class="sec grow" style="margin:0">What went wrong</div><button type="button" class="ghost small" id="pcOutBtn" title="Every time the internet dropped, over the dates you pick: ready to send to your internet provider">Outage report</button><button type="button" class="ghost small" id="pcFolder" title="One readable log file per day, and each Check my PC result">Open the logs folder</button><button type="button" class="ghost small" id="pcDismissAll" hidden title="Move every entry to Dismissed at the bottom (nothing is deleted)">Dismiss all</button><button type="button" class="ghost small" id="pcClear" hidden>Clear the list</button></div>
       <div class="kv" style="margin:6px 0 10px">Written down by itself when it happens: the internet or the router dropping, memory filling up, the graphics card overheating, a drive filling up or giving errors, blue screens, sudden shutdowns, hardware errors, and programs crashing.</div>
       <div id="pcOut" class="opts" hidden style="margin:0 0 12px;padding:10px;border:1px solid var(--line, #2a2f37);border-radius:8px">
         <div class="row" style="flex-wrap:wrap;gap:8px;align-items:end"><b class="grow">Internet outage report</b>
