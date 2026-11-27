@@ -266,6 +266,14 @@
       title = r.exit.signal === "SIGKILL" ? "The game was ended by force" : "The game was asked to close";
       why = r.exit.signal === "SIGKILL" ? "It was ended with SIGKILL: by you, by Steam's Stop button, or by the system when memory ran out (the system log says so if it was memory)." : "It was asked to close (SIGTERM): usually Steam's Stop button, or the PC shutting down.";
     }
+    // GTA San Andreas: songs in User Tracks whose names it can't read (see gtaTracks in watch.js)
+    const gt = r.gtaTracks;
+    if (gt && gt.badCount > 0 && kind !== "normal") {
+      const shown = gt.bad.slice(0, 15).map((n) => "• " + n).join("\n") + (gt.badCount > 15 ? "\n…and " + (gt.badCount - 15) + " more" : "");
+      find("warn", "GTA San Andreas: " + gt.badCount + (gt.badCount === 1 ? " song it can't read" : " songs it can't read"),
+        "These names in " + gt.where + " have characters GTA San Andreas can't read on this PC (it reads file names with Windows' older \"language for non-Unicode programs\" setting), and scanning them can crash it:\n" + shown);
+      T.unshift("Rename the songs in " + gt.where + " whose names GTA San Andreas can't read (listed under \"Also noticed\"), using plain letters and numbers. Or switch Windows' language for non-Unicode programs to match them (Settings > Time & language > Language & region > Administrative language settings > Change system locale), then restart the PC.");
+    }
     if (linux && r.exit && r.exit.via) facts.push(["How it was watched", "Started through the Steam launch option"]);
     if (linux) {
       const wine = !!(r.game && r.game.wine), tips = T.filter((t) => !WINDOWS_ONLY_TIP.test(t)).map(linuxWords);

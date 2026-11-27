@@ -4,6 +4,11 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.53 - 2026-11-27
+
+- **GTA San Andreas: songs it can't read** (new): when GTA San Andreas (`gta_sa.exe`) closes unexpectedly, the report looks at its User Tracks folder (`Documents\GTA San Andreas User Files\User Tracks`, and the folders inside it). If some songs have names with characters the game can't read on this PC (Japanese, Chinese, Korean, Cyrillic, emoji…), **Things to try** puts the fix first and **Also noticed** lists those songs. GTA San Andreas reads file names with Windows' older "language for non-Unicode programs" setting, so it can't open these names, and scanning them can crash it. The fix it suggests: rename those songs using plain letters and numbers, or switch Windows' language for non-Unicode programs to match them. The check is exact on PCs where that setting is a Western language (English, French, Spanish, German…, the usual case); with any other setting it lists nothing rather than guessing. The app only reads the names in that folder: it doesn't rename, move or send anything. `desktop/watch.js` (`gtaTracks`), `web/analyze.js`.
+- The notes under **Also noticed** keep their line breaks. `web/index.html`.
+
 ## 1.52 - 2026-11-27
 
 - **Check for updates shows what it's doing:** pressing it, the button reads **Checking for updates…**, then the result for a couple of seconds (**✓ Up to date**, **Update available** or **Couldn't check**), then fades back to **Check for updates**. `web/common.js` (`updBtnFlash`), `web/index.html`.

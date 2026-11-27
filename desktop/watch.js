@@ -26,6 +26,33 @@ const PC = require("./pc");          // the PC tab: the PC itself and the intern
 const DATA = path.join(app.getPath("documents"), "aGoldenDiagnose");
 const CFG_FILE = path.join(app.getPath("userData"), "diagnose.json");
 const DUMP_DIR = path.join(DATA, "_dumps");
+
+/* GTA San Andreas reads file names with Windows' older "language for non-Unicode programs" setting (the ANSI code page).
+ * Songs in its User Tracks folder whose names have characters outside that setting can't be opened, and scanning them
+ * can crash the game. Only the names are read: nothing is renamed, moved or sent. */
+const CP1252_EXTRA = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
+function ansiCodePage() {
+  try { const o = require("child_process").execFileSync("reg", ["query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage", "/v", "ACP"], { encoding: "utf8", windowsHide: true, timeout: 5000 }); const m = /ACP\s+REG_SZ\s+(\d+)/.exec(o); return m ? +m[1] : 0; } catch { return 0; }
+}
+function gtaTracks() {
+  let docs = ""; try { docs = require("electron").app.getPath("documents"); } catch {}
+  if (!docs) docs = path.join(os.homedir(), "Documents");
+  const dir = path.join(docs, "GTA San Andreas User Files", "User Tracks");
+  if (!fs.existsSync(dir)) return { found: false };
+  const acp = ansiCodePage();
+  // only a Western (1252) setting can be checked exactly here; with any other setting nothing is flagged
+  const readable = (name) => acp !== 1252 || [...name].every((c) => c.charCodeAt(0) < 256 || CP1252_EXTRA.includes(c));
+  const bad = []; let total = 0;
+  (function walk(d, depth, rel) {
+    let list = []; try { list = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of list) {
+      const r = rel ? rel + "\\" + e.name : e.name;
+      if (e.isDirectory()) { if (!readable(e.name)) bad.push(r + "\\"); if (depth < 3) walk(path.join(d, e.name), depth + 1, r); }
+      else { total++; if (!readable(e.name)) bad.push(r); }
+    }
+  })(dir, 0, "");
+  return { found: true, where: "Documents\\GTA San Andreas User Files\\User Tracks", total, acp, badCount: bad.length, bad: bad.slice(0, 40) };
+}
 let CFG = { games: {}, ignore: [], auto: false, keepNormal: false, keep: 25, interval: 2000, notify: false, startup: false };
 try { CFG = Object.assign(CFG, JSON.parse(fs.readFileSync(CFG_FILE, "utf8"))); } catch {}
 const saveCfg = (quiet) => { try { fs.mkdirSync(path.dirname(CFG_FILE), { recursive: true }); fs.writeFileSync(CFG_FILE, JSON.stringify(CFG, null, 1)); } catch {} if (quiet !== true) syncSoon(); };
@@ -318,6 +345,7 @@ async function finish(s, exit, end) {
     game: { name: g.name, exe: s.exe, path: s.path, dir: s.dir, version: s.ver ? s.ver.version : "", company: s.ver ? s.ver.company : "", product: s.ver ? s.ver.product : "", wine: !!s.wine },
     start: s.start, end, title: s.title || "", exit, stats: statsOf(s), events, files, dumps, logHits, system: sysCache || {}, others: s.others || [],
     modules: (s.modules || []).map((m) => m.replace(/^.*[\\/]/, "")).slice(0, 400), localDumps: ld && ld.ok ? { on: !!ld.on } : null, scan: sc && sc.result ? { dirs: sc.result.dirs, ms: sc.result.ms, tokens } : null };
+  if (!LINUX && /^gta_sa\.exe$/i.test(path.basename(String(s.exe || "")))) { try { report.gtaTracks = gtaTracks(); } catch (e) { alog("GTA SA songs: " + e.message); } }
   // files a crash leaves behind, even when the dump itself can't be read: any dump, or anything from a crash reporter's folder
   { const st = steamApp(s.path); if (st) { report.game.steam = st.id; if (LINUX) { const pv = protonOf(st); if (pv) report.game.proton = pv; } } }
   report.crashFiles = files.filter((f) => f.name && (/\.(dmp|mdmp|hdmp)$/i.test(f.name) || /crashcontext|[\\/]crashes[\\/]|[\\/]crashreport|crashdumps[\\/]|[\\/]crash_?reports?[\\/]/i.test(f.orig || ""))).map((f) => f.name).slice(0, 12);
