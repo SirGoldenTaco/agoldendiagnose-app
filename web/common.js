@@ -99,7 +99,7 @@ async function checkUpdates(manual) {
     let skip = ""; try { skip = localStorage.getItem("updSkip") || ""; } catch (e) {}
     if (!manual && CFG.share && skip === r.latest) { showUpd(CFG.name + " " + r.current); return; }      // you chose to skip that one
     if (!manual && !updNotify()) { showUpd(CFG.name + " " + r.current); return; }                           // "Tell me when an update is available" is off
-    showUpd(CFG.name + " " + r.latest + " is available (you have " + r.current + ").", "avail");
+    showUpd("Version " + r.latest + " is available (you have " + r.current + ").", "avail");   // never "<name> <version>…": the title row reads that as the version you have
   }
   else { showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current); if (manual) updBtnFlash("✓ Up to date"); }
 }
@@ -140,7 +140,7 @@ function askUpdate() {
       const ext = e.target.closest("a[data-ext]"); if (ext) { e.preventDefault(); if (window.native && window.native.openUrl) window.native.openUrl(ext.getAttribute("href")); return; }
       const a = e.target.closest("button[data-a]"); if (!a) return;
       if (a.dataset.a === "skip") { try { localStorage.setItem("updSkip", updUI.latest); } catch (x) {} showUpd(CFG.name + " " + (updUI.current || appVersion) + " · skipped " + updUI.latest); return close(false); }
-      if (a.dataset.a === "no") { showUpd(CFG.name + " " + updUI.latest + " is available (you have " + (updUI.current || appVersion) + ").", "avail"); return close(false); }
+      if (a.dataset.a === "no") { showUpd("Version " + updUI.latest + " is available (you have " + (updUI.current || appVersion) + ").", "avail"); return close(false); }
       close(true);
     };
     document.addEventListener("keydown", key, true);

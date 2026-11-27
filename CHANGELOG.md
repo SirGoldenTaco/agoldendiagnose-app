@@ -4,6 +4,11 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.57 - 2026-11-27
+
+- **Fixed: the update notice changed the version shown at the top.** When an update was available, the version beside the app's name showed the new version instead of the one you have, and the notice lost its start ("Is available (you have …)"). It now reads **Version 1.57 is available (you have 1.56).** and the top keeps your version. `web/common.js`.
+- **Fixed: the update screen said "No changelog entry was written for this version"** for 1.56, whose entry is under a grouped heading (1.55–1.56). The release page now finds an entry under a grouped heading too. `.github/workflows/build.yml` (the step that writes the release page).
+
 ## 1.55–1.56 - 2026-11-27
 
 - **Search on every long list** (new): the lists that can get long now have a search box at the top once they hold 6 or more entries: Games and its Hidden list, Reports and Archived reports, the PC tab's What went wrong and Check my PC, a problem's detail page (its problems and Windows' log), and each of their Dismissed / ignored lists. Typing shows only the entries that contain every word you typed, and says so when nothing matches; Esc clears it. What you typed stays put while the app refreshes the list. `web/diagnose.js` (`listSearch`), `web/pc.js`, `web/index.html`.
