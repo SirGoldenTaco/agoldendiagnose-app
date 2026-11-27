@@ -255,6 +255,8 @@ function drawReport() {
   ver.appendChild(acts); v.appendChild(ver);
   const ai = el("div", "card"); ai.id = "aiCard"; ai.hidden = true; ai.style.marginTop = "10px"; ai.appendChild(el("div", "sec", "Claude's reading")); ai.firstChild.style.marginTop = "0"; const aiText = el("div"); aiText.id = "ai"; ai.appendChild(aiText); v.appendChild(ai);
   const kept = store.get("ai:" + id, ""); if (kept) { ai.hidden = false; aiText.textContent = kept; }
+  // Settings → AI → "Explain each report by itself": the first time a report is opened, its explanation is asked for right away
+  else if (store.get("aiAuto", false) && (hasClaude() || store.get("aiLocal", false)) && (r.kind || (a && a.kind)) !== "normal") setTimeout(() => { if (OPEN && OPEN.id === id) explain(); }, 300);
   v.appendChild(fixesCard(r, a, id));
   if (a.tips.length) { const c = el("div", "card"); c.style.marginTop = "10px"; c.appendChild(el("div", "sec", "Things to try, in this order")); c.firstChild.style.marginTop = "0"; const ul = el("ol", "tips"); for (const t of a.tips) ul.appendChild(el("li", null, t)); c.appendChild(ul); v.appendChild(c); }
   if (a.findings.length) { const c = el("div", "card"); c.style.marginTop = "10px"; c.appendChild(el("div", "sec", "Also noticed")); c.firstChild.style.marginTop = "0"; for (const f of a.findings) { const d = el("div", "find s-" + f.sev); d.appendChild(el("b", null, f.title)); d.appendChild(el("span", null, f.text)); c.appendChild(d); } v.appendChild(c); }
@@ -459,6 +461,7 @@ $("aiKey").value = store.get("aiKey", ""); $("aiKey").onchange = () => { store.s
 $("aiModel").value = store.get("aiModel", "claude-sonnet-5-5"); $("aiModel").onchange = () => store.set("aiModel", $("aiModel").value);
 async function aiSrvState() { const x = N && N.ai ? await N.ai("can") : null; AI_SRV = !!(x && x.can); AI_SRV_DEF = !!(x && !x.shared); $("aiSrvWrap").hidden = !AI_SRV; $("aiSrv").checked = store.get("aiSrv", AI_SRV_DEF) === true; if (OPEN) drawReport(); }
 $("aiSrv").onchange = () => { store.set("aiSrv", $("aiSrv").checked); if (OPEN) drawReport(); };
+$("aiAuto").checked = !!store.get("aiAuto", false); $("aiAuto").onchange = () => store.set("aiAuto", $("aiAuto").checked);
 aiSrvState();
 $("aiLocal").checked = !!store.get("aiLocal", false); $("aiLocalRow").hidden = !$("aiLocal").checked;
 $("aiLocal").onchange = () => { store.set("aiLocal", $("aiLocal").checked); $("aiLocalRow").hidden = !$("aiLocal").checked; if (OPEN) drawReport(); };

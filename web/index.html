@@ -144,7 +144,11 @@
   details.ask textarea{width:100%;margin-top:8px;box-sizing:border-box;resize:vertical;font:inherit}
   details.ask .q{margin:8px 0 2px}details.ask .a{white-space:pre-wrap;line-height:1.5;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px}
   .drv{display:grid;grid-template-columns:minmax(90px,170px) 1fr auto;gap:10px;align-items:center;padding:6px 0}
-  .drv b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drv small{color:var(--dim);white-space:nowrap}
+  .drv b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drv small{color:var(--dim);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+  /* every drive's bar starts and ends at the same place: the rows share one set of columns (the widest name and the widest numbers) */
+  #pcDrives{display:grid;grid-template-columns:minmax(90px,max-content) 1fr max-content;column-gap:10px}
+  #pcDrives>*{grid-column:1/-1}
+  #pcDrives>.drv{display:grid;grid-template-columns:subgrid}
   .drv .bar{height:9px;border-radius:999px;background:var(--line,#2c3038);overflow:hidden}.drv .bar i{display:block;height:100%;background:var(--gold);border-radius:999px}
   .drv.warn .bar i{background:#f0883e}.drv.bad .bar i{background:var(--bad)}
   .pctop{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
@@ -159,7 +163,7 @@
   .hrow .badge{flex:none;min-width:62px;text-align:center}
   .okbox{margin-top:8px}.okbox summary{cursor:pointer;color:var(--dim);padding:6px 0}
   #pcHead.is-bad{border-color:rgba(255,123,114,.6)}
-  @container (max-width:520px){ .drv{grid-template-columns:1fr auto}.drv .bar{grid-column:1/-1;order:3} .inc summary small{margin-left:0;flex:1 1 100%} .hrow{flex-direction:column;gap:4px} }
+  @container (max-width:520px){ #pcDrives>.drv{grid-template-columns:1fr auto} .drv{grid-template-columns:1fr auto}.drv .bar{grid-column:1/-1;order:3} .inc summary small{margin-left:0;flex:1 1 100%} .hrow{flex-direction:column;gap:4px} }
   /* Fixes from the web */
   .fixrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .fixrow .t{flex:1 1 220px;min-width:0}.fixrow .t small{display:block;color:var(--dim);font-size:12px}.fixrow .t b{font-weight:600;overflow-wrap:anywhere}
@@ -372,6 +376,7 @@ html[data-agtheme=light] ::-webkit-scrollbar-thumb{background:#c3c8cf}
     <div class="row" style="margin-top:10px"><input type="password" id="aiKey" placeholder="Claude API key (sk-ant-…)" autocomplete="off" spellcheck="false" style="flex:1 1 220px"><select id="aiModel" style="flex:0 1 200px"><option value="claude-sonnet-5-5">Sonnet 5.5 (recommended)</option><option value="claude-haiku-5-5">Haiku 5.5 (cheapest)</option><option value="claude-opus-5-5">Opus 5.5 (deepest)</option></select></div>
     <div class="kv" style="margin-top:8px">The key stays on this PC and is sent only to api.anthropic.com, together with the report's text when you press the button.</div>
     <label class="toggle" id="aiSrvWrap" style="margin-top:8px" hidden><input type="checkbox" id="aiSrv"> Use Claude through my sync server <span class="dim">No key needed on this PC: your server keeps the key and a monthly budget. Needs the Sync sign-in below.</span></label>
+    <label class="toggle" style="margin-top:8px"><input type="checkbox" id="aiAuto"> Explain each report by itself <span class="dim">The first time a crash report is opened, its explanation is asked for right away (with whichever AI is set up here), instead of pressing ✨ Explain.</span></label>
     <label class="toggle" style="margin-top:8px"><input type="checkbox" id="aiLocal"> Explain with a local AI model instead <span class="dim">Free and private: the report never leaves this PC. Needs Ollama (ollama.com) running on this PC with the model below downloaded (for example: ollama pull qwen3:32b). "Find fixes" still uses Claude, since it searches the web.</span></label>
     <div class="row" id="aiLocalRow" style="margin-top:6px"><input type="text" id="aiLocalModel" placeholder="Model (qwen3:32b)" spellcheck="false" style="flex:1 1 160px"><input type="text" id="aiLocalUrl" placeholder="http://127.0.0.1:11434" spellcheck="false" style="flex:1 1 200px"></div>
   </div>

@@ -4,6 +4,11 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.58–1.60 - 2026-11-27
+
+- **Explain each report by itself** (new, off unless you switch it on): **Settings → AI → Explain each report by itself**. The first time a crash report is opened, its explanation is asked for right away from whichever AI is set up there, instead of pressing **✨ Explain**. Reports of games that closed normally are left alone. `web/diagnose.js`, `web/index.html`.
+- **Drives line up:** on the PC tab, every drive's bar now starts and ends at the same place, whatever the length of its name or numbers. `web/index.html`.
+
 ## 1.57 - 2026-11-27
 
 - **Fixed: the update notice changed the version shown at the top.** When an update was available, the version beside the app's name showed the new version instead of the one you have, and the notice lost its start ("Is available (you have …)"). It now reads **Version 1.57 is available (you have 1.56).** and the top keeps your version. `web/common.js`.
