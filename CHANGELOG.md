@@ -4,6 +4,10 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.68 - 2026-11-27
+
+- **New pictures on this page.** The five screenshots now show the app as it is today (they were from version 1.20): the Games tab, a crash report, the PC tab with Windows shortcuts and the lined-up drives, Settings, and a report on Linux. The games and the PC in them are still made up for the example. `screenshots/`.
+
 ## 1.67 - 2026-11-27
 
 - **This page now lists everything the app does and everything it can send** (only the page changed; the app is the same as 1.66). "What it does" adds internet drops and the outage report, What you changed, explaining with AI, Sync, search and tidy lists, updates and Force update, and themes. "What it sends over the internet" adds **Sync**, **Claude through your own sync server** and **Explain each report by itself**, which were missing: all three are optional and off until you turn them on. `README.md`.
