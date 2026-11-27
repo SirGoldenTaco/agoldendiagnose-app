@@ -27,31 +27,60 @@ const DATA = path.join(app.getPath("documents"), "aGoldenDiagnose");
 const CFG_FILE = path.join(app.getPath("userData"), "diagnose.json");
 const DUMP_DIR = path.join(DATA, "_dumps");
 
-/* GTA San Andreas reads file names with Windows' older "language for non-Unicode programs" setting (the ANSI code page).
- * Songs in its User Tracks folder whose names have characters outside that setting can't be opened, and scanning them
- * can crash the game. Only the names are read: nothing is renamed, moved or sent. */
+/* Older games read file and folder names with Windows' older "language for non-Unicode programs" setting (the ANSI
+ * code page). A name with characters outside it can't be opened by them, and a game scanning a folder that holds one
+ * (its mods, music, saves…) can fail or crash. Any game: if its program uses the older way of listing folders, the
+ * game's own folder and the Documents folders it wrote to while it ran are checked. Only names are read: nothing is
+ * renamed, moved or sent. */
 const CP1252_EXTRA = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
 function ansiCodePage() {
   try { const o = require("child_process").execFileSync("reg", ["query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage", "/v", "ACP"], { encoding: "utf8", windowsHide: true, timeout: 5000 }); const m = /ACP\s+REG_SZ\s+(\d+)/.exec(o); return m ? +m[1] : 0; } catch { return 0; }
 }
-function gtaTracks() {
+// does the game's program list folders the older way (FindFirstFileA / FindFirstFileExA in what it uses)?
+function usesAnsiFolders(exe) {
+  try {
+    const st = fs.statSync(exe); if (st.size > 200e6) return false;
+    const b = fs.readFileSync(exe);
+    return b.includes(Buffer.from("FindFirstFileA\0", "latin1")) || b.includes(Buffer.from("FindFirstFileExA\0", "latin1"));
+  } catch { return false; }
+}
+function ansiNames(s, start) {
+  if (!usesAnsiFolders(s.path)) return { checked: false, why: "unicode" };
+  const acp = ansiCodePage();
+  // only a Western (1252) setting can be checked exactly here; with any other setting nothing is listed
+  if (acp !== 1252) return { checked: false, why: "acp", acp };
+  const readable = (name) => [...name].every((c) => c.charCodeAt(0) < 256 || CP1252_EXTRA.includes(c));
   let docs = ""; try { docs = require("electron").app.getPath("documents"); } catch {}
   if (!docs) docs = path.join(os.homedir(), "Documents");
-  const dir = path.join(docs, "GTA San Andreas User Files", "User Tracks");
-  if (!fs.existsSync(dir)) return { found: false };
-  const acp = ansiCodePage();
-  // only a Western (1252) setting can be checked exactly here; with any other setting nothing is flagged
-  const readable = (name) => acp !== 1252 || [...name].every((c) => c.charCodeAt(0) < 256 || CP1252_EXTRA.includes(c));
-  const bad = []; let total = 0;
-  (function walk(d, depth, rel) {
-    let list = []; try { list = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+  const roots = [];
+  if (s.dir) roots.push({ dir: s.dir, label: "the game's folder" });
+  // the Documents folders the game wrote to while it ran (its saves, mods, music…), also inside "My Games"
+  for (const base of [docs, path.join(docs, "My Games")]) {
+    let list = []; try { list = fs.readdirSync(base, { withFileTypes: true }); } catch {}
     for (const e of list) {
-      const r = rel ? rel + "\\" + e.name : e.name;
-      if (e.isDirectory()) { if (!readable(e.name)) bad.push(r + "\\"); if (depth < 3) walk(path.join(d, e.name), depth + 1, r); }
-      else { total++; if (!readable(e.name)) bad.push(r); }
+      if (!e.isDirectory() || e.name === "My Games") continue;
+      const d = path.join(base, e.name);
+      try { if (fs.statSync(d).mtimeMs >= start - 60000 || recentInside(d, start)) roots.push({ dir: d, label: "Documents\\" + path.relative(docs, d) }); } catch {}
     }
-  })(dir, 0, "");
-  return { found: true, where: "Documents\\GTA San Andreas User Files\\User Tracks", total, acp, badCount: bad.length, bad: bad.slice(0, 40) };
+  }
+  const bad = []; let seen = 0;
+  for (const r of roots) {
+    (function walk(d, depth, rel) {
+      let list = []; try { list = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of list) {
+        if (++seen > 40000) return;
+        const shown = r.label + "\\" + (rel ? rel + "\\" : "") + e.name;
+        if (!readable(e.name)) bad.push(shown + (e.isDirectory() ? "\\" : ""));
+        if (e.isDirectory() && depth < 4) walk(path.join(d, e.name), depth + 1, rel ? rel + "\\" + e.name : e.name);
+      }
+    })(r.dir, 0, "");
+  }
+  return { checked: true, acp, folders: roots.map((r) => r.label), badCount: bad.length, bad: bad.slice(0, 40) };
+}
+// a folder whose own date didn't change can still hold files the game just wrote (one level down)
+function recentInside(d, start) {
+  try { for (const e of fs.readdirSync(d, { withFileTypes: true }).slice(0, 300)) { const p = path.join(d, e.name); if (fs.statSync(p).mtimeMs >= start - 60000) return true; } } catch {}
+  return false;
 }
 let CFG = { games: {}, ignore: [], auto: false, keepNormal: false, keep: 25, interval: 2000, notify: false, startup: false };
 try { CFG = Object.assign(CFG, JSON.parse(fs.readFileSync(CFG_FILE, "utf8"))); } catch {}
@@ -345,7 +374,7 @@ async function finish(s, exit, end) {
     game: { name: g.name, exe: s.exe, path: s.path, dir: s.dir, version: s.ver ? s.ver.version : "", company: s.ver ? s.ver.company : "", product: s.ver ? s.ver.product : "", wine: !!s.wine },
     start: s.start, end, title: s.title || "", exit, stats: statsOf(s), events, files, dumps, logHits, system: sysCache || {}, others: s.others || [],
     modules: (s.modules || []).map((m) => m.replace(/^.*[\\/]/, "")).slice(0, 400), localDumps: ld && ld.ok ? { on: !!ld.on } : null, scan: sc && sc.result ? { dirs: sc.result.dirs, ms: sc.result.ms, tokens } : null };
-  if (!LINUX && /^gta_sa\.exe$/i.test(path.basename(String(s.exe || "")))) { try { report.gtaTracks = gtaTracks(); } catch (e) { alog("GTA SA songs: " + e.message); } }
+  if (!LINUX && exit && exit.how !== "lost" && exit.code !== 0) { try { report.ansiNames = ansiNames(s, s.start); } catch (e) { alog("names check: " + e.message); } }
   // files a crash leaves behind, even when the dump itself can't be read: any dump, or anything from a crash reporter's folder
   { const st = steamApp(s.path); if (st) { report.game.steam = st.id; if (LINUX) { const pv = protonOf(st); if (pv) report.game.proton = pv; } } }
   report.crashFiles = files.filter((f) => f.name && (/\.(dmp|mdmp|hdmp)$/i.test(f.name) || /crashcontext|[\\/]crashes[\\/]|[\\/]crashreport|crashdumps[\\/]|[\\/]crash_?reports?[\\/]/i.test(f.orig || ""))).map((f) => f.name).slice(0, 12);
