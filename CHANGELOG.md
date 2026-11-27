@@ -4,6 +4,10 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.67 - 2026-11-27
+
+- **This page now lists everything the app does and everything it can send** (only the page changed; the app is the same as 1.66). "What it does" adds internet drops and the outage report, What you changed, explaining with AI, Sync, search and tidy lists, updates and Force update, and themes. "What it sends over the internet" adds **Sync**, **Claude through your own sync server** and **Explain each report by itself**, which were missing: all three are optional and off until you turn them on. `README.md`.
+
 ## 1.61–1.66 - 2026-11-27
 
 - **Fixed: "Update available" but no way to update.** The row at the top only shows the **Check for updates** button, and the line holding the real **Update** button was folded away, so the button flashed "Update available" and nothing could be pressed. The button itself now becomes **Update to v1.66** (for example) when a new version is waiting; pressing it shows the update screen as before, then the download progress and "Installing… reopening". `web/common.js`.
