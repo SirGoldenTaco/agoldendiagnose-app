@@ -4,6 +4,16 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.52 - 2026-11-27
+
+- **Check for updates shows what it's doing:** pressing it, the button reads **Checking for updates…**, then the result for a couple of seconds (**✓ Up to date**, **Update available** or **Couldn't check**), then fades back to **Check for updates**. `web/common.js` (`updBtnFlash`), `web/index.html`.
+- Two code comments in `web/index.html` are now worded for this app only.
+- `CHANGELOG.md`: versions that were never published on their own are now grouped under one heading (1.34–1.38, 1.40–1.41, 1.47–1.51) instead of one heading each.
+
+## 1.47–1.51 - 2026-11-26
+
+- Never published on their own: everything in them is listed under 1.52 above.
+
 ## 1.46 - 2026-11-26
 
 - **You choose every update** (new): **Update** no longer starts the download right away. It first shows, over the page, what's in the new version (its notes from the release page), when it came out, how big it is and its SHA-256, with a link to the release page. Nothing is downloaded unless you press **Agree and update**. **Not now** closes it; **Skip this version** also stops the notice for that version when the app starts (Check for updates still finds it). `web/common.js` (`askUpdate`), `desktop/main.js` (`update-check`).
@@ -33,13 +43,9 @@ so this list can always be checked against what really changed.
 - **Ask about it** (new): under each internet drop, each Check my PC finding and each tile's page, a box to say what doesn't match or to ask a question. **✨ Ask** sends your question, with what the app found and suggested (and, for a network card, each setting's list of choices), to the AI you set up in Settings → AI (your own Claude key, or a local AI model on this PC), and the answer stays under that problem. Nothing is sent unless you press it. **Report it** opens this page's issue form in your browser, filled in with your message and what the app suggested, for you to check and post. `web/pc.js` (`askBox`), `web/diagnose.js` (`askAI`).
 - `README.md`: “What it sends over the internet” now lists **Ask about it**, and says **Report it** only opens the issue form.
 
-## 1.41 - 2026-11-26
+## 1.40–1.41 - 2026-11-26
 
-- Never published on its own: everything in it is listed under 1.42 above.
-
-## 1.40 - 2026-11-26
-
-- Never published on its own: everything in it is listed under 1.42 above.
+- Never published on their own: everything in them is listed under 1.42 above.
 
 ## 1.39 - 2026-11-26
 
@@ -59,25 +65,9 @@ so this list can always be checked against what really changed.
 - The check that runs before this page is updated now lives in its own file, `desktop/public-guard.js`, which stays with the author and isn't part of this page or the app. It checks the same things as before, and also the author's personal details. `desktop/public-source.js`.
 - `CHANGELOG.md`: the heading of 1.33 below had been left out by mistake; it's back.
 
-## 1.38 - 2026-11-26
+## 1.34–1.38 - 2026-11-26
 
-- Never published on its own: everything in it is listed under 1.39 above.
-
-## 1.37 - 2026-11-26
-
-- Never published: its build stopped itself before anything was made (a check found that a shared copy would have included a part that only applies to the author's own PC), and nothing was released. Everything is listed under 1.39 above.
-
-## 1.36 - 2026-11-26
-
-- Never published on its own: everything in it is listed under 1.39 above.
-
-## 1.35 - 2026-11-26
-
-- Never published on its own: everything in it is listed under 1.39 above.
-
-## 1.34 - 2026-11-26
-
-- Never published on its own: everything in it is listed under 1.39 above.
+- Never published on their own: everything in them is listed under 1.39 above. The build of 1.37 stopped itself before anything was made (a check found that a shared copy would have included a part that only applies to the author's own PC), so nothing was released for it.
 
 ## 1.33 - 2026-11-26
 

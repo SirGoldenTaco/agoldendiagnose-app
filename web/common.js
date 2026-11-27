@@ -75,24 +75,33 @@ function showUpd(text, mode) {
   updUI.box.classList.toggle("avail", mode === "avail");
   updUI.go.hidden = mode !== "avail";
 }
+/* The "Check for updates" button says what it's doing: "Checking for updates…", then "✓ Up to date" (or "Update
+   available", "Couldn't check") for a couple of seconds, then fades back to "Check for updates". */
+function updBtnFlash(text, ms) {
+  const b = updUI.btn; if (!b) return;
+  clearTimeout(updUI.flashT); b.disabled = false; b.textContent = text; b.style.transition = "opacity .35s"; b.style.opacity = "1";
+  updUI.flashT = setTimeout(() => { b.style.opacity = "0"; updUI.flashT = setTimeout(() => { b.textContent = "Check for updates"; b.style.opacity = "1"; }, 350); }, ms || 2500);
+}
 async function checkUpdates(manual) {
   if (!NATIVE.kind) { if (manual) showUpd("Updates come through the Windows or Android app."); return; }
   if (updUI.busy) return;
   if (manual) showUpd("Checking for updates…");
+  if (manual && updUI.btn) { clearTimeout(updUI.flashT); updUI.btn.style.opacity = "1"; updUI.btn.disabled = true; updUI.btn.textContent = "Checking for updates…"; }
   const r = (await NATIVE.checkUpdate()) || { ok: false, error: "network" };
   if (!r.ok) {
+    if (manual) updBtnFlash("Couldn't check");
     if (manual) showUpd(r.error === "no-token" ? "Update checks aren't set up in this build." : /^http-(401|403|404)$/.test(r.error || "") ? "GitHub refused the update check. The app's update key may have expired." : "Couldn't check for updates. Check your connection.");
     else showUpd(CFG.name + " " + appVersion);
     return;
   }
-  if (r.available) {
+  if (r.available) { if (manual) updBtnFlash("Update available");
     updUI.latest = r.latest; updUI.info = r.info || null; updUI.current = r.current;
     let skip = ""; try { skip = localStorage.getItem("updSkip") || ""; } catch (e) {}
     if (!manual && CFG.share && skip === r.latest) { showUpd(CFG.name + " " + r.current); return; }      // you chose to skip that one
     if (!manual && !updNotify()) { showUpd(CFG.name + " " + r.current); return; }                           // "Tell me when an update is available" is off
     showUpd(CFG.name + " " + r.latest + " is available (you have " + r.current + ").", "avail");
   }
-  else showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current);
+  else { showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current); if (manual) updBtnFlash("✓ Up to date"); }
 }
 /* The copy given to other people never updates without asking: Update first shows what's in the new version (the
    release page's notes, its date, size and SHA-256) over the page, and only "Agree and update" downloads it.
