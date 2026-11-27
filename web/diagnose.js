@@ -380,6 +380,22 @@ async function claude(request) {
   const headers = { "content-type": "application/json", "x-api-key": String(store.get("aiKey", "") || "").trim(), "anthropic-version": "2023-06-01" };
   return window.native.httpPost("https://api.anthropic.com/v1/messages", headers, JSON.stringify(request));
 }
+/* For the PC tab's "Ask about it" box: one question, answered by whichever AI is set up in Settings → AI.
+   { ok, text } or { ok: false, error }. */
+window.askAI = async function (prompt) {
+  if (store.get("aiLocal", false)) {
+    const base = String(store.get("aiLocalUrl", "") || "http://127.0.0.1:11434").trim().replace(/\/+$/, ""), model = String(store.get("aiLocalModel", "") || "qwen3:32b").trim();
+    const lr = await window.native.httpPost(base + "/api/chat", { "content-type": "application/json" }, JSON.stringify({ model, stream: false, messages: [{ role: "user", content: prompt }] }));
+    let lj = null; try { lj = JSON.parse(lr.body); } catch (e) {}
+    if (!lr.ok || lr.status !== 200) return { ok: false, error: "The local AI model isn't answering at " + base + "." };
+    return { ok: true, text: String((lj && lj.message && lj.message.content) || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim() };
+  }
+  if (!hasClaude()) return { ok: false, error: "none" };
+  const res = await claude({ model: store.get("aiModel", "claude-sonnet-5-5"), max_tokens: 1200, messages: [{ role: "user", content: prompt }] });
+  let j = null; try { j = JSON.parse(res.body); } catch (e) {}
+  if (!res.ok || res.status !== 200) return { ok: false, error: !res.ok ? "Couldn't reach Claude." : res.status === 401 ? (useSrv() ? "Your Sync sign-in has ended: sign in again in Settings > Sync." : "That Claude API key isn't accepted. Check it in Settings.") : (j && j.error && j.error.message) || "Claude answered " + res.status + "." };
+  return { ok: true, text: ((j && j.content) || []).filter((c) => c.type === "text").map((c) => c.text).join("").trim() };
+};
 async function explain() {
   const { r, a, id } = OPEN, local = !!store.get("aiLocal", false); if (!hasClaude() && !local) return;
   const card = $("aiCard"), out = $("ai"); card.hidden = false; out.textContent = (local ? "The local AI model" : "Claude") + " is reading the report…"; card.scrollIntoView({ block: "nearest" });

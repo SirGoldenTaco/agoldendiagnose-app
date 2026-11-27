@@ -142,7 +142,7 @@ $a = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' } | Sort-Objec
 if (-not $a) { $a = Get-NetAdapter -Physical | Sort-Object ifIndex | Select-Object -First 1 }
 if ($a) {
   $o.adapter = @{ name = $a.Name; desc = $a.InterfaceDescription; speed = [string]$a.LinkSpeed; driver = [string]$a.DriverVersion; date = [string]$a.DriverDate; provider = [string]$a.DriverProvider; wifi = ($a.NdisPhysicalMedium -eq 9 -or $a.InterfaceDescription -match 'Wi-?Fi|Wireless|802\\.11') }
-  $o.settings = @(Get-NetAdapterAdvancedProperty -Name $a.Name | Where-Object { $_.DisplayName -match 'Energy|EEE|Green|Power Sav|Saving|Idle|Gigabit Lite|Speed|Duplex|Flow Control|Roaming|Wake on|Interrupt Moderation|Selective Suspend' } | ForEach-Object { @{ n = [string]$_.DisplayName; v = [string]$_.DisplayValue } })
+  $o.settings = @(Get-NetAdapterAdvancedProperty -Name $a.Name | Where-Object { $_.DisplayName -match 'Energy|EEE|Green|Power Sav|Saving|Idle|Gigabit Lite|Speed|Duplex|Flow Control|Roaming|Wake on|Interrupt Moderation|Selective Suspend' } | ForEach-Object { @{ n = [string]$_.DisplayName; v = [string]$_.DisplayValue; vals = @($_.ValidDisplayValues | ForEach-Object { [string]$_ }) } })
   $pm = Get-NetAdapterPowerManagement -Name $a.Name; if ($pm) { $o.allowOff = [string]$pm.AllowComputerToTurnOffDevice }
 }
 $re = 'e1[a-z]*express|e2f|e1i|rt6[0-9]+|rtl|realtek|intel|netwtw|netwlv|ndis|tcpip|dhcp|wlan|mlx|aqnic|aqtion|marvell|b57|killer|netadaptercx|ixgbe|igc|i225|i226|mediatek|qualcomm'
@@ -157,27 +157,34 @@ function netAdvice(what, d) {
   const steps = [], found = [], ad = d.adapter || {}, set = d.settings || [], ev = d.events || [], wk = d.week || {};
   if (ad.desc) found.push("Network card: " + ad.desc + (ad.speed ? ", linked at " + ad.speed : "") + (ad.driver ? ". Driver " + ad.driver + (ad.date ? " from " + String(ad.date).split(" ")[0] : "") : "") + ".");
   let age = -1; { const t = Date.parse(ad.date); if (t) age = (Date.now() - t) / 86400000; }
-  const saving = set.filter((x) => /energy|eee|green|power sav|saving|gigabit lite|selective suspend/i.test(x.n) && !/wake/i.test(x.n) && isOn(x.v));
-  const speed = set.find((x) => /speed|duplex/i.test(x.n));
+  // a power-saving switch that's on, and the "off" choice its own list offers. Settings that aren't switches (like
+  // "EEE Max Support Speed", which only sets up to which speed power saving is used) are left out.
+  const offOf = (x) => (Array.isArray(x.vals) && x.vals.length ? x.vals.find((v) => !isOn(v)) : "Disabled");
+  const saving = set.filter((x) => /energy|eee|green|power sav|saving|gigabit lite|selective suspend/i.test(x.n) && !/wake|max support|speed/i.test(x.n) && isOn(x.v) && offOf(x));
+  const eeeOff = set.some((x) => /energy[- ]efficient|^eee$|advanced eee/i.test(x.n) && !isOn(x.v));
+  const speed = set.find((x) => /speed\s*(&|and)\s*duplex|^link speed|duplex mode/i.test(x.n) && !/eee|max support/i.test(x.n));
   const linkDown = ev.filter((e) => /disconnect|link (is )?down|network link/i.test(e.m) || e.id === 27), resets = ev.filter((e) => /resetting/i.test(e.m) || e.id === 10400);
   if (ev.length) found.push("Windows' log around the drop: " + ev.slice(0, 4).map((e) => e.p + " " + e.id + ": " + e.m.slice(0, 120)).join(" | "));
   else if (d.events) found.push("Windows' log has nothing from the network card around the drop.");
   if (wk.all != null) found.push("In the last 7 days the network card reported " + (wk.down || 0) + " link drop" + (wk.down === 1 ? "" : "s") + " and Windows reset it " + (wk.resets || 0) + " time" + (wk.resets === 1 ? "" : "s") + ".");
   if (saving.length) found.push("Power saving is on in the card's settings: " + saving.map((x) => x.n + " = " + x.v).join(", ") + ".");
+  else if (eeeOff) found.push("Energy-Efficient Ethernet is already off on this card.");
   if (d.allowOff === "Enabled" || d.allowOff === "True") found.push("Windows is allowed to turn the card off to save power.");
   if (what === "cable" || what === "blip-cable") {
-    if (saving.length) steps.push({ t: "Turn off the card's power saving (the most common cause of short drops)", s: ["Open Device Manager (right-click Start → Device Manager).", "Network adapters → double-click " + (ad.desc || "your network card") + " → Advanced tab.", ...saving.map((x) => "Set “" + x.n + "” to Disabled (it's " + x.v + " now)."), "Press OK. The connection blinks once while it applies."] });
+    if (saving.length) steps.push({ t: "Turn off the card's power saving (the most common cause of short drops)", s: ["Open Device Manager (right-click Start → Device Manager).", "Network adapters → double-click " + (ad.desc || "your network card") + " → Advanced tab.", ...saving.map((x) => "Set “" + x.n + "” to “" + offOf(x) + "” (it's “" + x.v + "” now)."), "Press OK. The connection blinks once while it applies."] });
     if (d.allowOff === "Enabled" || d.allowOff === "True") steps.push({ t: "Stop Windows from turning the card off", s: ["Device Manager → Network adapters → " + (ad.desc || "your network card") + " → Power Management tab.", "Untick “Allow the computer to turn off this device to save power”, then OK."] });
-    if (resets.length || (wk.resets || 0) > 0 || (age > 365)) steps.push({ t: "Update the network card's driver", s: [(age > 0 ? "The driver is " + (age > 60 ? Math.round(age / 30) + " months" : Math.round(age) + " days") + " old. " : "") + "Get the newest one from the card's maker (" + (/realtek/i.test(ad.desc || "") ? "Realtek's site, “Network Interface Controllers” → your chip" : /intel/i.test(ad.desc || "") ? "Intel's Driver & Support Assistant" : /marvell|aqtion|aquantia/i.test(ad.desc || "") ? "Marvell's AQtion drivers page" : "or your motherboard's support page") + "), not from Windows Update.", "Install it, restart, and watch whether the drops stop."] });
+    const q = (x) => "https://www.google.com/search?q=" + encodeURIComponent(x);
+    const drvLinks = [ad.desc ? { label: "Find the newest driver for " + ad.desc.replace(/ Family Controller$/i, ""), url: q(ad.desc + " driver download" + (/realtek/i.test(ad.desc) ? " site:realtek.com" : /intel/i.test(ad.desc) ? " site:intel.com" : "")) } : null, d.board ? { label: "Drivers for your motherboard (" + d.board + ")", url: q(d.board + " support drivers download") } : null, /intel/i.test(ad.desc || "") ? { label: "Intel Driver & Support Assistant", url: "https://www.intel.com/content/www/us/en/support/detect.html" } : null].filter(Boolean);
+    if (resets.length || (wk.resets || 0) > 0 || (age > 365)) steps.push({ links: drvLinks, t: "Update the network card's driver", s: [(age > 0 ? "The driver is " + (age > 60 ? Math.round(age / 30) + " months" : Math.round(age) + " days") + " old. " : "") + "Get the newest one from the card's maker (" + (/realtek/i.test(ad.desc || "") ? "Realtek's site, “Network Interface Controllers” → your chip" : /intel/i.test(ad.desc || "") ? "Intel's Driver & Support Assistant" : /marvell|aqtion|aquantia/i.test(ad.desc || "") ? "Marvell's AQtion drivers page" : "or your motherboard's support page") + "), not from Windows Update.", "Install it, restart, and watch whether the drops stop."] });
     if (!ad.wifi) steps.push({ t: "Check the cable and the router port", s: ["Reseat the cable at both ends until it clicks.", "Try another port on the router, and another cable." + (/(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 ? " At " + ad.speed + " use Cat 6 or better: an old Cat 5e cable can drop in and out at multi-gig speeds." : ""), "Look at the card's lights on the back of the PC when it drops: if they go out, it's the cable, the port or the card."] });
     if (!ad.wifi && /(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 && speed) steps.push({ t: "If it keeps dropping, test at a lower link speed", s: ["Device Manager → " + (ad.desc || "your network card") + " → Advanced → “" + speed.n + "”.", "Pick 2.5 Gbps Full Duplex (or 1 Gbps) instead of Auto Negotiation, and see if the drops stop for a few days. Most internet plans don't need more than that."] });
     if (ad.wifi) steps.push({ t: "Make the Wi-Fi steadier", s: ["Use the 5 GHz (or 6 GHz) network if the router has one, and keep the PC in sight of the router.", "Device Manager → your Wi-Fi card → Advanced: set “Roaming Aggressiveness” to Lowest if it's there.", "A cable is always steadier for games."] });
   } else if (what === "router") {
     steps.push({ t: "Look at the router", s: ["Did other devices lose the internet at the same time? If yes, it's the router; if only this PC, it's this PC's cable or card (see the steps for “the network connection itself dropped”).", "Restart the router, and make sure it isn't hot or covered.", "Update its firmware from its app or its web page.", "If it keeps happening, the router may be failing: the outage report shows how often."] });
   } else {
-    steps.push({ t: "The problem was past your router: the modem or your internet provider", s: ["Restart the modem (unplug it for 30 seconds).", "Check the cable going into the modem from the wall (coax, fibre or phone line) is tight.", "Look for an outage on your provider's status page or app.", "If it keeps happening: PC tab → What went wrong → Outage report, and send it to your provider. It shows the router kept answering while the internet didn't, which means the problem is on their side of the modem."] });
+    steps.push({ open: [{ label: "Open the outage report", tool: "outage" }], t: "The problem was past your router: the modem or your internet provider", s: ["Restart the modem (unplug it for 30 seconds).", "Check the cable going into the modem from the wall (coax, fibre or phone line) is tight.", "Look for an outage on your provider's status page or app.", "If it keeps happening: PC tab → What went wrong → Outage report, and send it to your provider. It shows the router kept answering while the internet didn't, which means the problem is on their side of the modem."] });
   }
-  if ((wk.down || 0) + (wk.resets || 0) >= 3 || DB.incidents.filter((i) => i.kind === "net" && Date.now() - i.t < 86400000).length >= 3) steps.push({ t: "Keep a record", s: ["PC tab → What went wrong → Outage report lists every drop with when and how long, ready to send to your provider or to keep while you try the steps above."] });
+  if ((wk.down || 0) + (wk.resets || 0) >= 3 || DB.incidents.filter((i) => i.kind === "net" && Date.now() - i.t < 86400000).length >= 3) steps.push({ open: [{ label: "Open the outage report", tool: "outage" }], t: "Keep a record", s: ["PC tab → What went wrong → Outage report lists every drop with when and how long, ready to send to your provider or to keep while you try the steps above."] });
   return { found, steps };
 }
 let netDiagBusy = null;
@@ -194,10 +201,11 @@ async function netDiag(inc) {
     } else {
       const r = await powershell(NETDIAG_PS(start - 120000, end + 60000), 60000);
       if (r && r.ok) d = r.data || {}; else d = { error: (r && r.error) || "no answer" };
+      try { if (!sysCache) { const si = await X.ask("sysinfo", {}, 15000); if (si && si.ok) { sysCache = si.info; sysAt = Date.now(); } } if (sysCache && sysCache.board) d.board = sysCache.board; } catch {}
       for (const k of ["events", "settings"]) if (d[k] && !Array.isArray(d[k])) d[k] = [d[k]];
     }
     const adv = netAdvice(what, d);
-    inc.diag = { at: Date.now(), what, found: adv.found, steps: adv.steps, error: d.error || "" };
+    inc.diag = { at: Date.now(), what, found: adv.found, steps: adv.steps, error: d.error || "", card: d.adapter || null, settings: (d.settings || []).slice(0, 30), allowOff: d.allowOff || "" };
     save(); X.tell("pc-update");
     X.alog("pc: looked into a drop (" + what + "): " + adv.steps.map((x) => x.t).join(" / "));
     return inc.diag;
@@ -640,6 +648,16 @@ exports.start = function (x) {
   ipcMain.handle("pc-outagesave", (_e, a) => {
     const dir = path.join(app.getPath("downloads"), "aGoldenDiagnose"), f = path.join(dir, "Internet outage report " + String((a && a.name) || "").replace(/[^0-9a-z -]/gi, "").slice(0, 40) + ".txt");
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, String((a && a.text) || "").replace(/\r?\n/g, "\r\n")); shell.showItemInFolder(f); return { ok: true, path: f }; } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("pc-open", (_e, a) => {
+    if (process.platform !== "win32") return false;
+    const t = String((a && a.tool) || ""), sys32 = path.join(process.env.WINDIR || "C:\\Windows", "System32");
+    const uri = { update: "ms-settings:windowsupdate", storage: "ms-settings:storagesense", power: "ms-settings:powersleep", backup: "ms-settings:backup", startupset: "ms-settings:startupapps", security: "windowsdefender:", troubleshoot: "ms-settings:troubleshoot", sound: "ms-settings:sound", display: "ms-settings:display", graphics: "ms-settings:display-advancedgraphics", network: "ms-settings:network-status", apps: "ms-settings:appsfeatures", about: "ms-settings:about" }[t];
+    if (uri) { shell.openExternal(uri); return true; }
+    const exe = { devmgmt: ["mmc.exe", ["devmgmt.msc"]], taskmgr: ["taskmgr.exe", ["/0", "/startup"]], taskmgrnow: ["taskmgr.exe", []], sysadv: ["SystemPropertiesAdvanced.exe", []], diskclean: ["cleanmgr.exe", []], netconn: ["control.exe", ["ncpa.cpl"]], eventvwr: ["mmc.exe", ["eventvwr.msc"]], reliability: ["perfmon.exe", ["/rel"]], resmon: ["resmon.exe", []], diskmgmt: ["mmc.exe", ["diskmgmt.msc"]] }[t];
+    if (exe) { execFile(path.join(sys32, exe[0]), exe[1], { windowsHide: false }, () => {}); return true; }
+    if (t === "mdsched") { shell.openPath(path.join(sys32, "MdSched.exe")); return true; }
+    return false;
   });
   ipcMain.handle("pc-ignore", (_e, a) => { const k = String((a && a.key) || ""); if (!k) return false; if (a.on) DB.ignore[k] = { at: Date.now(), title: String(a.title || "").slice(0, 200) }; else delete DB.ignore[k]; save(); return DB.ignore; });
   ipcMain.handle("pc-netdiag", async (_e, a) => { const i = DB.incidents.find((x) => x.id === (a && a.id)); return i ? netDiag(i) : null; });

@@ -4,6 +4,22 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.42 - 2026-11-26
+
+- **Windows shortcuts** (new): a row on the PC tab, under the tiles, with buttons that open Windows' own tools: Device Manager, Task Manager, Startup apps, Windows Update, Network connections and settings, Display, Graphics settings, Sound, Power, Storage, Disk Management, Reliability history, Event Viewer, Resource Monitor, Advanced system settings, Installed apps, Windows Security and About this PC. It folds away (click its heading). Each tile's page also has the few that go with it (for example Network: Device Manager, Network connections, Network settings). Only this fixed list can be opened. `web/pc.js` (`quickRow`), `desktop/pc.js` (`pc-open`).
+- **Fixed: a wrong step for some network cards.** After an internet drop, the app could say to set “EEE Max Support Speed” to Disabled, a choice that setting doesn't have: it isn't an on/off switch, it only sets up to which speed power saving is used. The app now reads each setting's own list of choices, only suggests turning off real on/off switches, suggests the exact “off” choice that list offers (Disabled, Off…), and says so when Energy-Efficient Ethernet is already off. The “test at a lower link speed” step now points at “Speed & Duplex”, not at the power-saving speed. `desktop/pc.js` (`netAdvice`).
+- **Buttons and links next to the steps** (new): a step that names a Windows tool has a button that opens it (Device Manager, Task Manager's Startup apps, Windows Update, Storage, Power, Backup, Windows Security, Windows Memory Diagnostic, Advanced system settings, Disk Cleanup, Troubleshoot). Steps that need a download link to it (graphics drivers from NVIDIA, AMD or Intel, MemTest86, WinDbg, BlueScreenView, LibreHardwareMonitor, cloning tools), and driver and BIOS steps open a search for your exact network card or motherboard. Only that fixed list of Windows tools can be opened this way. `web/pc.js` (`stepButtons`), `desktop/pc.js` (`pc-open`).
+- **Ask about it** (new): under each internet drop, each Check my PC finding and each tile's page, a box to say what doesn't match or to ask a question. **✨ Ask** sends your question, with what the app found and suggested (and, for a network card, each setting's list of choices), to the AI you set up in Settings → AI (your own Claude key, or a local AI model on this PC), and the answer stays under that problem. Nothing is sent unless you press it. **Report it** opens this page's issue form in your browser, filled in with your message and what the app suggested, for you to check and post. `web/pc.js` (`askBox`), `web/diagnose.js` (`askAI`).
+- `README.md`: “What it sends over the internet” now lists **Ask about it**, and says **Report it** only opens the issue form.
+
+## 1.41 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.42 above.
+
+## 1.40 - 2026-11-26
+
+- Never published on its own: everything in it is listed under 1.42 above.
+
 ## 1.39 - 2026-11-26
 
 **The PC tab**

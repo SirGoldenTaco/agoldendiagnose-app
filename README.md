@@ -95,6 +95,7 @@ It goes online only for these, and only when the matching feature is used:
 - **The search buttons** in a report open a web search in your browser.
 - **Explain with Claude** (optional, only if you enter your own Anthropic API key) sends the text of that one report to `api.anthropic.com`.
 - **Explain with a local AI model** (optional, off by default) sends that one report's text only to an AI model running on your own PC (Ollama, at `127.0.0.1`): nothing leaves the PC.
+- **Ask about it** (on the PC tab, only when you press **✨ Ask**) sends your question, with what the app found and suggested for that one problem (for an internet drop: the network card's name, driver and settings), to the same AI: Claude at `api.anthropic.com` with your key, or the local model on your PC. **Report it** only opens this page's issue form in your browser; nothing is posted until you post it.
 - **Temperatures from LibreHardwareMonitor** (only if you run it): the app reads the processor's, the memory's and the motherboard's temperatures from LibreHardwareMonitor's own web server on your PC (`127.0.0.1:8085`), because Windows can't give them without a driver. Nothing leaves the PC, and nothing is asked for while it isn't running (it looks again every 2 minutes).
 
 ## Checking it yourself

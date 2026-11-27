@@ -40,6 +40,14 @@
   }
   const deg = (c) => (c > 0 ? Math.round(c) + " °C" : "");
 
+  function drawQuick() {
+    if (document.getElementById("pcQuick") || !WIN) return;
+    const c = el("details", "card"); c.id = "pcQuick"; c.style.marginTop = "10px"; c.open = store.get("pcQuickOpen", true) !== false;
+    c.addEventListener("toggle", () => store.set("pcQuickOpen", c.open));
+    const sm = el("summary", "sec", "Windows shortcuts"); sm.style.cssText = "cursor:pointer;margin:0"; c.appendChild(sm);
+    const r = quickRow(Object.keys(QUICK)); r.style.marginTop = "8px"; c.appendChild(r);
+    $("pcTiles").after(c);
+  }
   function drawLive() {
     const L = LIVE; if (!L || $("tab-pc").hidden) return;
     const p = L.pc, n = L.net, ch = L.chart || {};
@@ -59,6 +67,7 @@
     const main = p ? (p.nets || []).find((x) => x.up && x.gateway) || (p.nets || []).find((x) => x.up) : null;
     spark(setTile("tLink", "Network", p ? "↓ " + rate(p.rx || 0) : "…", [["Upload", p ? "↑ " + rate(p.tx || 0) : ""], ["Link", main ? (main.wifi ? "Wi-Fi" : "Cable") + (main.mbps ? " · " + (main.mbps >= 1000 ? main.mbps / 1000 + " Gbps" : main.mbps + " Mbps") : "") : p ? "none" : ""], ["Card", main ? main.name : ""]], main && !main.wifi && main.mbps > 0 && main.mbps <= 100 ? "warn" : "", "link"), ch.pc, 5, 0, "#79c0ff");
     if (DET.which) drawDetailLive();
+    drawQuick();
     // drives and "right now": filled from the live reading, or a short note while there isn't one yet
     const drives = $("pcDrives"), tp = $("pcTop");
     if (p && (p.drives || p.topCpu)) {
@@ -77,15 +86,107 @@
     $("pcLine").textContent = !L.helper ? "The watcher isn't running; it restarts by itself in a few seconds." : open.length ? open.map((i) => i.title).join(" · ") : p ? "Nothing wrong right now. The PC and the internet are being watched." : "Starting up — reading your PC…";
   }
 
-  // numbered steps; each item is a string, or {t: title, s: [steps]}
+  // Buttons that go with a step: Windows tools opened directly (only on Windows), and pages to download from.
+  // Found from what the step says, so every step that names a tool or a download gets its button.
+  const WIN = !/Linux/.test(navigator.userAgent);
+  const G = (x) => "https://www.google.com/search?q=" + encodeURIComponent(x);
+  const STEP_BUTTONS = [
+    [/Device Manager/, { label: "Open Device Manager", tool: "devmgmt" }],
+    [/Task Manager/, { label: "Open Task Manager (Startup apps)", tool: "taskmgr" }],
+    [/Windows Update/, { label: "Open Windows Update", tool: "update" }],
+    [/Storage Sense|System → Storage|Temporary files/, { label: "Open Storage settings", tool: "storage" }],
+    [/Power mode/, { label: "Open Power settings", tool: "power" }],
+    [/File History|Backup options/, { label: "Open Backup settings", tool: "backup" }],
+    [/Windows Security/, { label: "Open Windows Security", tool: "security" }],
+    [/Windows Memory Diagnostic/, { label: "Open Windows Memory Diagnostic", tool: "mdsched" }],
+    [/Virtual memory|Advanced system settings/, { label: "Open Advanced system settings", tool: "sysadv" }],
+    [/Disk Cleanup/, { label: "Open Disk Cleanup", tool: "diskclean" }],
+    [/troubleshooter/, { label: "Open Troubleshoot", tool: "troubleshoot" }],
+    [/Outage report/, { label: "Open the outage report", tool: "outage" }],
+    [/WinDbg/, { label: "WinDbg (Microsoft Store)", url: "https://apps.microsoft.com/detail/9pgjgd53tn86" }],
+    [/BlueScreenView/, { label: "BlueScreenView", url: "https://www.nirsoft.net/utils/blue_screen_view.html" }],
+    [/MemTest86/, { label: "MemTest86", url: "https://www.memtest86.com/" }],
+    [/LibreHardwareMonitor/, { label: "LibreHardwareMonitor (download)", url: "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases" }],
+    [/Clonezilla/, { label: "Clonezilla", url: "https://clonezilla.org/" }],
+    [/Samsung Magician/, { label: "Samsung Magician", url: "https://semiconductor.samsung.com/consumer-storage/support/tools/" }],
+    [/NVIDIA/, { label: "NVIDIA drivers", url: "https://www.nvidia.com/en-us/drivers/" }],
+    [/\bAMD\b|Adrenalin/, { label: "AMD drivers", url: "https://www.amd.com/en/support/download/drivers.html" }],
+    [/Intel/, { label: "Intel Driver & Support Assistant", url: "https://www.intel.com/content/www/us/en/support/detect.html" }],
+    [/chipset/, { label: "AMD chipset drivers", url: "https://www.amd.com/en/support/download/drivers.html" }],
+  ];
+  function stepButtons(texts, extra) {
+    const all = (extra || []).slice(), txt = texts.join(" ");
+    for (const [re, b] of STEP_BUTTONS) if (re.test(txt) && !all.some((x) => x.label === b.label)) all.push(b);
+    const m = /support page for the (.+?)\./.exec(txt); if (m) all.push({ label: "BIOS for the " + m[1], url: G(m[1] + " BIOS download support") });
+    const list = all.filter((b) => b.url || b.tool === "outage" || WIN); if (!list.length) return null;
+    const w = el("div", "stepbtns");
+    for (const b of list) w.appendChild(btn("ghost small", (b.url ? "↗ " : "") + b.label, async () => {
+      if (b.url) return window.native.openUrl(b.url);
+      if (b.tool === "outage") { if (DET.which) closeDetail(); const o = $("pcOut"); o.hidden = false; $("pcOutTo").value = new Date().toISOString().slice(0, 10); if (!$("pcOutFrom").value) $("pcOutFrom").value = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10); o.scrollIntoView({ block: "center" }); return; }
+      const ok = await P.pc("open", { tool: b.tool }); if (!ok) toast("That opens on Windows only.");
+    }, b.url ? b.url : ""));
+    return w;
+  }
+  // Quick buttons to Windows' own tools: a row on the PC tab, and the ones that go with each tile on its page
+  const QUICK = { devmgmt: "Device Manager", taskmgrnow: "Task Manager", taskmgr: "Startup apps", update: "Windows Update", netconn: "Network connections", network: "Network settings", display: "Display", graphics: "Graphics settings", sound: "Sound", power: "Power", storage: "Storage", diskmgmt: "Disk Management", reliability: "Reliability history", eventvwr: "Event Viewer", resmon: "Resource Monitor", sysadv: "Advanced system settings", apps: "Installed apps", security: "Windows Security", about: "About this PC" };
+  const QUICK_FOR = { cpu: ["taskmgrnow", "resmon", "reliability", "power"], ram: ["taskmgrnow", "resmon", "sysadv"], gpu: ["devmgmt", "graphics", "display"], net: ["network", "netconn", "devmgmt"], link: ["devmgmt", "netconn", "network"] };
+  function quickRow(keys) {
+    if (!WIN) return null;
+    const w = el("div", "stepbtns"); w.style.margin = "0";
+    for (const k of keys) w.appendChild(btn("ghost small", QUICK[k], async () => { const ok = await P.pc("open", { tool: k }); if (!ok) toast("That opens on Windows only."); }));
+    return w;
+  }
+  // numbered steps; each item is a string, or {t: title, s: [steps], links: [{label, url}], open: [{label, tool}]}
   function stepsBox(steps, title) {
     const w = el("div", "steps"); if (title) w.appendChild(el("div", "lbl2", title));
+    const loose = (steps || []).filter((x) => typeof x === "string");
     for (const st of steps || []) {
       if (typeof st === "string") { (w.lastChild && w.lastChild.tagName === "OL" ? w.lastChild : w.appendChild(el("ol"))).appendChild(el("li", null, st)); continue; }
       w.appendChild(el("b", null, st.t)); const ol = el("ol"); for (const x of st.s || []) ol.appendChild(el("li", null, x)); w.appendChild(ol);
+      const bt = stepButtons([st.t].concat(st.s || []), (st.links || []).concat(st.open || [])); if (bt) w.appendChild(bt);
     }
+    if (loose.length) { const bt = stepButtons(loose); if (bt) w.appendChild(bt); }
     return w;
   }
+  /* "Something doesn't match? Ask about it": under each problem. The question goes, with what the app found and
+     suggested, to whichever AI is set up (Settings → AI); the answer stays under the problem. Without AI it can be
+     reported instead: on the public copy as an issue on its GitHub page (the form opens filled in, nothing is sent
+     until you post it), on the author's copy into the app's own log. */
+  function askBox(key, title, ctx) {
+    const d = el("details", "ask"), hist = store.get("ask:" + key, []) || [];
+    d.open = hist.length > 0;
+    d.appendChild(el("summary", null, hist.length ? "Questions about it (" + hist.length + ")" : "Something doesn't match, or a question? Ask about it"));
+    for (const h of hist) { const q = el("p", "q"); q.appendChild(el("b", null, "You: ")); q.appendChild(document.createTextNode(h.q)); d.appendChild(q); const a = el("div", "a", h.a); d.appendChild(a); }
+    const ta = el("textarea"); ta.rows = 2; ta.placeholder = "For example: there's no “Disabled” in that list, only speeds."; d.appendChild(ta);
+    const row = el("div", "row"); row.style.cssText = "gap:8px;margin-top:6px;flex-wrap:wrap";
+    const out = el("div", "a"); out.hidden = true;
+    const ctxText = () => { try { return String(ctx() || "").slice(0, 6000); } catch (e) { return title; } };
+    row.appendChild(btn("small", "✨ Ask", async (e) => {
+      const q = ta.value.trim(); if (!q) throw new Error("Write what doesn't match, or your question, first.");
+      const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Asking…"; }
+      try {
+        const prompt = "You are helping someone use aGoldenDiagnose, a Windows app that watches PC games and the PC for problems. It found the problem below and suggested what to do. The person has a question, or says something doesn't match what they see. Answer in plain words, briefly, with concrete numbered steps for their exact hardware and settings. If the app's suggestion doesn't fit their setup, say so plainly and give the right step instead. Don't invent settings that aren't listed; if you're unsure, say what to look for.\n\nWhat the app shows:\n" + ctxText()
+          + (hist.length ? "\n\nEarlier in this conversation:\n" + hist.slice(-4).map((h) => "Q: " + h.q + "\nA: " + h.a).join("\n") : "") + "\n\nTheir message: " + q;
+        const r = window.askAI ? await window.askAI(prompt) : { ok: false, error: "none" };
+        if (!r.ok) { out.hidden = false; out.textContent = r.error === "none" ? "No AI is set up yet: Settings → AI (your own Claude key, or a local AI model on this PC). You can still report it with the other button." : r.error; return; }
+        const all = (store.get("ask:" + key, []) || []).concat([{ q, a: r.text || "(no answer)", t: Date.now() }]).slice(-12); store.set("ask:" + key, all);
+        alog("pc ask: " + title + " | Q: " + q.slice(0, 300));
+        const nd = askBox(key, title, ctx); nd.open = true; d.replaceWith(nd);
+      } finally { if (b) { b.disabled = false; b.textContent = "✨ Ask"; } }
+    }));
+    row.appendChild(btn("ghost small", "Report it", async () => {
+      const q = ta.value.trim(); if (!q) throw new Error("Write what doesn't match first.");
+      if (window.APPCFG && window.APPCFG.share) {
+        const what = q + "\n\nWhere: PC tab, “" + title + "”.\n\nWhat the app suggested:\n" + ctxText().slice(0, 2500);
+        const u = "https://github.com/SirGoldenTaco/agoldendiagnose-app/issues/new?template=problem.yml&title=" + encodeURIComponent("Advice doesn't fit: " + title.slice(0, 80)) + "&version=" + encodeURIComponent(typeof appVersion === "string" ? appVersion : "") + "&what=" + encodeURIComponent(what);
+        await window.native.openUrl(u.slice(0, 7500)); toast("The issue form opened in your browser, filled in. Check it (remove anything personal), then post it.", false, 8000);
+      } else { alog("pc issue report: " + title + " | " + q.slice(0, 1000) + " || context: " + ctxText().slice(0, 1500), true); toast("Reported: it's in the app's log, so it can be fixed.", false, 6000); ta.value = ""; }
+    }));
+    d.appendChild(row); d.appendChild(out);
+    return d;
+  }
+  const netCtx = (i) => () => { const g = i.diag || {}, c = g.card || {}; return [i.title + " (" + new Date(i.at || i.t).toLocaleString() + ")", i.detail || "", ...(g.found || []), c.desc ? "Card: " + c.desc + ", " + (c.speed || "") + ", driver " + (c.driver || "") + " (" + (c.date || "") + ")" : "", ...(g.settings || []).map((x) => "Setting “" + x.n + "” = " + x.v + (x.vals && x.vals.length ? " (choices: " + x.vals.join(", ") + ")" : "")), g.allowOff ? "Allow the computer to turn off this device: " + g.allowOff : "", "Suggested:", ...(g.steps || []).map((st) => st.t + ": " + (st.s || []).join(" "))].filter(Boolean).join("\n"); };
+
   function netFindings(i, d) {
     if (i.kind !== "net" || i.open) return;
     if (i.diag) {
@@ -94,6 +195,7 @@
       if (i.diag.steps && i.diag.steps.length) d.appendChild(stepsBox(i.diag.steps, "What to try"));
       d.appendChild(btn("ghost small", "Look again", async () => { await P.pc("netdiag", { id: i.id }); await load(); }));
     } else d.appendChild(btn("small", "Look into it", async (e) => { const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Looking…"; } await P.pc("netdiag", { id: i.id }); openInc = i.id; await load(); }));
+    d.appendChild(askBox("inc:" + i.id, i.title, netCtx(i)));
   }
 
   function drawIncidents() {
@@ -136,6 +238,7 @@
       t.appendChild(head); t.appendChild(el("small", null, it.area)); if (it.text) t.appendChild(el("p", null, it.text));
       const steps = it.steps || (it.tip ? [it.tip] : null);
       if (steps && !ignored) { const dd = el("details", "todo"); dd.open = it.sev === "bad"; dd.appendChild(el("summary", null, "What to do")); dd.appendChild(stepsBox(steps)); t.appendChild(dd); }
+      if (!ignored) t.appendChild(askBox("chk:" + keyOf(it), it.title, () => [it.area + ": " + it.title, it.text, "Suggested:", ...(steps || [])].filter(Boolean).join("\n")));
       r.appendChild(t); return r;
     };
     const shown = h.items.filter((it) => it.sev !== "ok" && !ign[keyOf(it)]), hidden = h.items.filter((it) => it.sev !== "ok" && ign[keyOf(it)]);
@@ -189,7 +292,7 @@
   }
   function drawDetail() {
     const box = $("pcDetail"), w = DET.which, d = DET.data, T = (LIVE && LIVE.temps) || {}; box.textContent = ""; if (!w) return;
-    const head = el("div", "row"); head.style.cssText = "margin:10px 0;gap:10px;align-items:center"; const bk = btn("ghost", "← Back", () => closeDetail()); bk.setAttribute("data-back", ""); head.appendChild(bk); head.appendChild(el("b", null, DET_NAME[w])); head.lastChild.style.fontSize = "18px"; box.appendChild(head);
+    const head = el("div", "row"); head.style.cssText = "margin:10px 0;gap:10px;align-items:center"; const bk = btn("ghost", "← Back", () => closeDetail()); bk.setAttribute("data-back", ""); head.appendChild(bk); head.appendChild(el("b", null, DET_NAME[w])); head.lastChild.style.fontSize = "18px"; box.appendChild(head); { const q = quickRow(QUICK_FOR[w] || []); if (q) { q.style.margin = "0 0 10px"; box.appendChild(q); } }
     const live = el("div", "card"); live.id = "pcDetLive"; box.appendChild(live); drawDetailLive();
     // temperatures that need a sensor program (Windows)
     const isWin = !/Linux/.test(navigator.userAgent);
@@ -227,6 +330,7 @@
       link: ["Short drops on a cable: turn off the card's power saving (Energy-Efficient Ethernet, Green Ethernet) and update its driver; both are listed above when the app can read them.", "A multi-gig link (2.5/5/10 Gbps) needs Cat 6 or better cable; an old cable can drop in and out.", "Linked at only 100 Mbps: the cable or a plug is worn."],
     }[w];
     if (tips) { const c = section("What you can do"); c.appendChild(stepsBox(tips)); box.appendChild(c); }
+    { const c = section("Ask about it"); c.appendChild(askBox("det:" + w, DET_NAME[w], () => DET_NAME[w] + " page\n" + (($("pcDetLive") || {}).innerText || "").slice(0, 2500) + "\nProblems seen: " + (d.incidents || []).slice(0, 8).map((i) => i.title).join("; ") + "\nTips shown: " + (tips || []).join(" "))); c.lastChild.open = true; box.appendChild(c); }
   }
 
   async function load() { if (!P) return; PS = await P.pc("state"); if (!PS) return; LIVE = PS.live; drawLive(); drawIncidents(); drawHealth(); drawPcSettings(); const n = (PS.incidents || []).filter((i) => i.open).length, tb = document.querySelector('#tabs button[data-tab="pc"]'); if (tb) tb.textContent = n ? "PC (" + n + ")" : "PC"; }
