@@ -32,8 +32,8 @@ const GB = (b) => (b / 1073741824).toFixed(b < 10737418240 ? 1 : 0) + " GB";
 const span = (ms) => { const s = Math.round(ms / 1000); return s < 90 ? s + " s" : s < 5400 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h"; };
 
 /* ---------------------------------------------------------------- what is kept */
-let DB = { incidents: [], lastEv: 0, daily: {}, health: null, outages: [], ignore: {} };
-function load() { try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(FILE(), "utf8"))); } catch {} if (!Array.isArray(DB.incidents)) DB.incidents = []; if (!DB.daily) DB.daily = {}; if (!Array.isArray(DB.outages)) DB.outages = []; if (!DB.ignore || typeof DB.ignore !== "object") DB.ignore = {}; }
+let DB = { incidents: [], lastEv: 0, daily: {}, health: null, outages: [], ignore: {}, changes: [] };
+function load() { try { DB = Object.assign(DB, JSON.parse(fs.readFileSync(FILE(), "utf8"))); } catch {} if (!Array.isArray(DB.incidents)) DB.incidents = []; if (!DB.daily) DB.daily = {}; if (!Array.isArray(DB.outages)) DB.outages = []; if (!DB.ignore || typeof DB.ignore !== "object") DB.ignore = {}; if (!Array.isArray(DB.changes)) DB.changes = []; }
 let saveT = 0;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { fs.mkdirSync(path.dirname(FILE()), { recursive: true }); fs.writeFileSync(FILE(), JSON.stringify(DB)); } catch {} }, 400); }
 function logLine(t, text) { try { fs.mkdirSync(LOGDIR(), { recursive: true }); fs.appendFileSync(path.join(LOGDIR(), dayOf(t) + ".log"), timeOf(t) + "  " + String(text).replace(/\s*\n\s*/g, " | ") + "\r\n"); } catch {} }
@@ -171,13 +171,13 @@ function netAdvice(what, d) {
   else if (eeeOff) found.push("Energy-Efficient Ethernet is already off on this card.");
   if (d.allowOff === "Enabled" || d.allowOff === "True") found.push("Windows is allowed to turn the card off to save power.");
   if (what === "cable" || what === "blip-cable") {
-    if (saving.length) steps.push({ t: "Turn off the card's power saving (the most common cause of short drops)", s: ["Open Device Manager (right-click Start → Device Manager).", "Network adapters → double-click " + (ad.desc || "your network card") + " → Advanced tab.", ...saving.map((x) => "Set “" + x.n + "” to “" + offOf(x) + "” (it's “" + x.v + "” now)."), "Press OK. The connection blinks once while it applies."] });
+    if (saving.length) steps.push({ fix: saving.map((x) => ({ setting: x.n, value: offOf(x), label: "Set “" + x.n + "” to “" + offOf(x) + "” for me" })), t: "Turn off the card's power saving (the most common cause of short drops)", s: ["Open Device Manager (right-click Start → Device Manager).", "Network adapters → double-click " + (ad.desc || "your network card") + " → Advanced tab.", ...saving.map((x) => "Set “" + x.n + "” to “" + offOf(x) + "” (it's “" + x.v + "” now)."), "Press OK. The connection blinks once while it applies."] });
     if (d.allowOff === "Enabled" || d.allowOff === "True") steps.push({ t: "Stop Windows from turning the card off", s: ["Device Manager → Network adapters → " + (ad.desc || "your network card") + " → Power Management tab.", "Untick “Allow the computer to turn off this device to save power”, then OK."] });
     const q = (x) => "https://www.google.com/search?q=" + encodeURIComponent(x);
     const drvLinks = [ad.desc ? { label: "Find the newest driver for " + ad.desc.replace(/ Family Controller$/i, ""), url: q(ad.desc + " driver download" + (/realtek/i.test(ad.desc) ? " site:realtek.com" : /intel/i.test(ad.desc) ? " site:intel.com" : "")) } : null, d.board ? { label: "Drivers for your motherboard (" + d.board + ")", url: q(d.board + " support drivers download") } : null, /intel/i.test(ad.desc || "") ? { label: "Intel Driver & Support Assistant", url: "https://www.intel.com/content/www/us/en/support/detect.html" } : null].filter(Boolean);
     if (resets.length || (wk.resets || 0) > 0 || (age > 365)) steps.push({ links: drvLinks, t: "Update the network card's driver", s: [(age > 0 ? "The driver is " + (age > 60 ? Math.round(age / 30) + " months" : Math.round(age) + " days") + " old. " : "") + "Get the newest one from the card's maker (" + (/realtek/i.test(ad.desc || "") ? "Realtek's site, “Network Interface Controllers” → your chip" : /intel/i.test(ad.desc || "") ? "Intel's Driver & Support Assistant" : /marvell|aqtion|aquantia/i.test(ad.desc || "") ? "Marvell's AQtion drivers page" : "or your motherboard's support page") + "), not from Windows Update.", "Install it, restart, and watch whether the drops stop."] });
     if (!ad.wifi) steps.push({ t: "Check the cable and the router port", s: ["Reseat the cable at both ends until it clicks.", "Try another port on the router, and another cable." + (/(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 ? " At " + ad.speed + " use Cat 6 or better: an old Cat 5e cable can drop in and out at multi-gig speeds." : ""), "Look at the card's lights on the back of the PC when it drops: if they go out, it's the cable, the port or the card."] });
-    if (!ad.wifi && /(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 && speed) steps.push({ t: "If it keeps dropping, test at a lower link speed", s: ["Device Manager → " + (ad.desc || "your network card") + " → Advanced → “" + speed.n + "”.", "Pick 2.5 Gbps Full Duplex (or 1 Gbps) instead of Auto Negotiation, and see if the drops stop for a few days. Most internet plans don't need more than that."] });
+    if (!ad.wifi && /(\d+(\.\d+)?) Gbps/.test(ad.speed || "") && parseFloat(RegExp.$1) > 1 && speed) steps.push({ fix: (speed.vals || []).filter((v) => /^(2\.5|1\.0|1) ?Gbps.*full/i.test(v)).map((v) => ({ setting: speed.n, value: v, label: "Set it to “" + v + "” for me" })), t: "If it keeps dropping, test at a lower link speed", s: ["Device Manager → " + (ad.desc || "your network card") + " → Advanced → “" + speed.n + "”.", "Pick 2.5 Gbps Full Duplex (or 1 Gbps) instead of Auto Negotiation, and see if the drops stop for a few days. Most internet plans don't need more than that."] });
     if (ad.wifi) steps.push({ t: "Make the Wi-Fi steadier", s: ["Use the 5 GHz (or 6 GHz) network if the router has one, and keep the PC in sight of the router.", "Device Manager → your Wi-Fi card → Advanced: set “Roaming Aggressiveness” to Lowest if it's there.", "A cable is always steadier for games."] });
   } else if (what === "router") {
     steps.push({ t: "Look at the router", s: ["Did other devices lose the internet at the same time? If yes, it's the router; if only this PC, it's this PC's cable or card (see the steps for “the network connection itself dropped”).", "Restart the router, and make sure it isn't hot or covered.", "Update its firmware from its app or its web page.", "If it keeps happening, the router may be failing: the outage report shows how often."] });
@@ -187,6 +187,37 @@ function netAdvice(what, d) {
   if ((wk.down || 0) + (wk.resets || 0) >= 3 || DB.incidents.filter((i) => i.kind === "net" && Date.now() - i.t < 86400000).length >= 3) steps.push({ open: [{ label: "Open the outage report", tool: "outage" }], t: "Keep a record", s: ["PC tab → What went wrong → Outage report lists every drop with when and how long, ready to send to your provider or to keep while you try the steps above."] });
   return { found, steps };
 }
+/* ---------------------------------------------------------------- Fix it for me, and what you changed
+ * Fix it for me changes one of the network card's own settings to one of the choices the card itself lists, read again
+ * right before (no free text ever reaches PowerShell), as administrator (Windows asks first). The old value is kept so
+ * Undo puts it back, and the change goes into "What you changed", where the app compares the drops before and after. */
+const psq = (x) => "'" + String(x).replace(/'/g, "''") + "'";
+async function netFix(setting, value, why) {
+  if (LINUX) return { ok: false, error: "Only on Windows." };
+  const r = await powershell(NETDIAG_PS(Date.now() - 1000, Date.now()), 45000);
+  if (!r || !r.ok || !r.data || !r.data.adapter) return { ok: false, error: "The network card couldn't be read." };
+  let set = r.data.settings || []; if (!Array.isArray(set)) set = [set];
+  const it = set.find((x) => x.n === setting), vals = it ? (Array.isArray(it.vals) ? it.vals : [it.vals]).filter(Boolean) : [];
+  if (!it || !vals.includes(value)) return { ok: false, error: "The card doesn't offer “" + value + "” for “" + setting + "”." };
+  if (it.v === value) return { ok: true, same: true };
+  const name = r.data.adapter.name;
+  const w = await powershellElevated("$o = @{}\ntry { Set-NetAdapterAdvancedProperty -Name " + psq(name) + " -DisplayName " + psq(setting) + " -DisplayValue " + psq(value) + " -ErrorAction Stop; $o.ok = $true } catch { $o.ok = $false; $o.error = [string]$_.Exception.Message }\n$o | ConvertTo-Json -Depth 5 -Compress", 60000);
+  if (!w.ok) return { ok: false, error: "Windows didn't allow the change (" + w.error + ")." };
+  if (!w.data.ok) return { ok: false, error: w.data.error || "The change didn't apply." };
+  const ch = { id: "c" + Date.now().toString(36), t: Date.now(), auto: true, card: r.data.adapter.desc, setting, from: it.v, to: value, text: (why ? why + ": " : "") + "set “" + setting + "” to “" + value + "” (it was “" + it.v + "”) on " + r.data.adapter.desc };
+  DB.changes.unshift(ch); if (DB.changes.length > 200) DB.changes.length = 200; adCache = null; save();
+  X.alog("pc: fix it for me: " + ch.text);
+  return { ok: true, change: ch };
+}
+// drops per day before a change (the 7 days before it) and after it (since, up to 7 days)
+function changeStats(c) {
+  const day = 86400000, drop = (o) => o.what !== "slow" && o.what !== "dns";
+  const before = outagesBetween(c.t - 7 * day, c.t).filter(drop).length, afterEnd = Math.min(Date.now(), c.t + 7 * day), afterDays = Math.max(0, (afterEnd - c.t) / day);
+  const after = outagesBetween(c.t, afterEnd).filter(drop).length;
+  return { before, perDayBefore: before / 7, after, afterDays, perDayAfter: afterDays >= 0.5 ? after / afterDays : null };
+}
+const changesOut = () => DB.changes.map((c) => Object.assign({}, c, { stats: changeStats(c) }));
+
 let netDiagBusy = null;
 async function netDiag(inc) {
   if (!inc || inc.kind !== "net") return null;
@@ -366,7 +397,7 @@ async function detail(which) {
     adapter = adCache ? { adapter: adCache.adapter, settings: adCache.settings, allowOff: adCache.allowOff, week: adCache.week } : null;
   }
   const drops = which === "net" || which === "link" ? outagesBetween(Date.now() - 7 * 86400000, Date.now()) : [];
-  return { which, sys: sysCache, incidents: incs.slice(0, 40), events, adapter, drops, temps: live().temps };
+  return { which, sys: sysCache, incidents: incs.slice(0, 40), events, adapter, drops, temps: live().temps, changes: which === "net" || which === "link" ? changesOut() : [] };
 }
 
 /* ---------------------------------------------------------------- "Check my PC": a one-off look at its health */
@@ -645,6 +676,7 @@ exports.start = function (x) {
   });
   ipcMain.handle("pc-check", (_e, a) => check(a));
   ipcMain.handle("pc-outages", (_e, a) => outagesBetween(+(a && a.from) || 0, +(a && a.to) || Date.now()));
+  ipcMain.handle("pc-outchanges", (_e, a) => changesOut().filter((c) => c.t >= (+(a && a.from) || 0) && c.t <= (+(a && a.to) || Date.now())));
   ipcMain.handle("pc-outagesave", (_e, a) => {
     const dir = path.join(app.getPath("downloads"), "aGoldenDiagnose"), f = path.join(dir, "Internet outage report " + String((a && a.name) || "").replace(/[^0-9a-z -]/gi, "").slice(0, 40) + ".txt");
     try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, String((a && a.text) || "").replace(/\r?\n/g, "\r\n")); shell.showItemInFolder(f); return { ok: true, path: f }; } catch (e) { return { ok: false, error: e.message }; }
@@ -665,6 +697,14 @@ exports.start = function (x) {
   });
   // dismiss: hides an entry from "What went wrong" (and a tile's "Problems seen"); nothing is deleted, it can come back
   ipcMain.handle("pc-dismiss", (_e, a) => { const ids = new Set((a && a.ids) || []), all = a && a.all; for (const i of DB.incidents) if (all || ids.has(i.id)) { if (a.on) i.dismissed = Date.now(); else delete i.dismissed; } save(); return true; });
+  ipcMain.handle("pc-netfix", async (_e, a) => { const r = await netFix(String((a && a.setting) || ""), String((a && a.value) || ""), String((a && a.why) || "").slice(0, 120)); X.tell("pc-update"); return r; });
+  ipcMain.handle("pc-netundo", async (_e, a) => { const c = DB.changes.find((x) => x.id === (a && a.id)); if (!c || !c.auto || c.undone) return { ok: false, error: "Nothing to undo." }; const r = await netFix(c.setting, c.from, "Undo"); if (r.ok) { c.undone = Date.now(); save(); } return r; });
+  ipcMain.handle("pc-changes", (_e, a) => {
+    const act = a && a.action;
+    if (act === "add") { const text = String(a.text || "").trim().slice(0, 300); if (text) { DB.changes.unshift({ id: "c" + Date.now().toString(36), t: +a.t || Date.now(), text }); DB.changes.sort((x, y) => y.t - x.t); save(); } }
+    else if (act === "remove") { DB.changes = DB.changes.filter((c) => c.id !== a.id); save(); }
+    return changesOut();
+  });
   ipcMain.handle("pc-ignore", (_e, a) => { const k = String((a && a.key) || ""); if (!k) return false; if (a.on) DB.ignore[k] = { at: Date.now(), title: String(a.title || "").slice(0, 200) }; else delete DB.ignore[k]; save(); return DB.ignore; });
   ipcMain.handle("pc-netdiag", async (_e, a) => { const i = DB.incidents.find((x) => x.id === (a && a.id)); return i ? netDiag(i) : null; });
   ipcMain.handle("pc-detail", async (_e, a) => detail(String((a && a.which) || "")));

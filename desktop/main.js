@@ -90,7 +90,9 @@ ipcMain.handle("update-check", async () => {
     const latest = String(rel.tag_name || "").replace(/^v/, "");
     const asset = (rel.assets || []).find((a) => a.name === EXE_NAME);
     exeAssetUrl = asset ? asset.url : null;
-    return { ok: true, current, latest, available: !!asset && newer(latest, current) };
+    // what the release page says about it, for the "update?" screen (shown before anything is downloaded)
+    const info = { notes: String(rel.body || "").slice(0, 30000), page: rel.html_url || "", date: rel.published_at || "", size: asset ? asset.size || 0 : 0, sha256: asset && asset.digest ? String(asset.digest).replace(/^sha256:/, "") : "", file: EXE_NAME };
+    return { ok: true, current, latest, available: !!asset && newer(latest, current), info };
   } catch { return { ok: false, error: "network", current }; }
 });
 ipcMain.handle("update-install", async (e) => {

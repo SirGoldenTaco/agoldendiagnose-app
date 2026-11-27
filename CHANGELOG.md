@@ -4,6 +4,14 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.46 - 2026-11-26
+
+- **You choose every update** (new): **Update** no longer starts the download right away. It first shows, over the page, what's in the new version (its notes from the release page), when it came out, how big it is and its SHA-256, with a link to the release page. Nothing is downloaded unless you press **Agree and update**. **Not now** closes it; **Skip this version** also stops the notice for that version when the app starts (Check for updates still finds it). `web/common.js` (`askUpdate`), `desktop/main.js` (`update-check`).
+- **Update notices can be turned off** (new): **Settings → Tell me when an update is available**, or the tick box on the update screen. When it's off, the app doesn't mention new versions by itself; **Check for updates** still finds them. `web/common.js`, `web/index.html`.
+- **Fix it for me** (new): after an internet drop, the steps that change a network card setting have a **… for me** button: for example “Set Green Ethernet to Disabled for me” or “Set it to 2.5 Gbps Full Duplex for me”. The first click says what will happen, the second does it, after Windows' administrator prompt. It only offers settings and choices the card itself lists, read again right before the change. `desktop/pc.js` (`netFix`), `web/pc.js` (`fixBtn`).
+- **What you changed** (new), on the Internet and Network pages: note what you try (a new driver, another cable, another router port…) with its date, and the app shows the drops per day in the 7 days before and in the days since, and says whether it looks like it helped. Changes made with **… for me** are added by themselves, with **Undo** to put the setting back. The outage report lists them too. `desktop/pc.js` (`changeStats`), `web/pc.js` (`changesSection`).
+- `README.md`: the update screen, the update-notice setting, and what **… for me** changes.
+
 ## 1.45 - 2026-11-26
 
 - **Everything that piles up can now be dismissed** (new): in **What went wrong** each entry has a **✕**, and **Dismiss all** clears the list in one go; dismissed entries wait folded under **Dismissed** at the bottom, where **Bring back** (or **Bring them all back**) returns them. Nothing is deleted (**Clear the list** still deletes). Something still going on can't be dismissed until it's over. The same ✕ and **Dismiss them all** are on each tile's page, for **Problems seen** and for the entries **In Windows' log** (those are remembered on this PC for 30 days). Questions saved under **Ask about it** have **Clear these questions**. `web/pc.js`, `web/index.html`, `desktop/pc.js` (`pc-dismiss`), `desktop/preload.js`.

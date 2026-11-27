@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("native", {
     unignore: (key) => ipcRenderer.invoke("diag-unignore", key),
     hide: (exe) => ipcRenderer.invoke("diag-hide", exe),
     sync: (what, a) => ipcRenderer.invoke("diag-sync", what, a),
-    pc: (what, a) => (["state", "settings", "check", "clear", "folder", "outages", "outagesave", "ignore", "netdiag", "detail", "open", "dismiss"].includes(what) ? ipcRenderer.invoke("pc-" + what, a) : Promise.resolve(null)),
+    pc: (what, a) => (["state", "settings", "check", "clear", "folder", "outages", "outagesave", "ignore", "netdiag", "detail", "open", "dismiss", "netfix", "netundo", "changes", "outchanges"].includes(what) ? ipcRenderer.invoke("pc-" + what, a) : Promise.resolve(null)),
     settings: (v) => ipcRenderer.invoke("diag-settings", v),
     report: (id) => ipcRenderer.invoke("diag-report", id),
     file: (id, name) => ipcRenderer.invoke("diag-file", id, name),

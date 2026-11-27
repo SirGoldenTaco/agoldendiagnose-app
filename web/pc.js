@@ -136,6 +136,44 @@
     for (const k of keys) w.appendChild(btn("ghost small", QUICK[k], async () => { const ok = await P.pc("open", { tool: k }); if (!ok) toast("That opens on Windows only."); }));
     return w;
   }
+  // "… for me": changes one setting of the network card (Windows asks for administrator rights). Two clicks: the first
+  // says what will happen, the second does it. The change shows under "What you changed", with Undo.
+  function fixBtn(f, why) {
+    const b = el("button", "small", "⚡ " + f.label); b.type = "button"; let armed = false;
+    b.onclick = async () => {
+      if (!armed) { armed = true; b.textContent = "Sure? Windows will ask for administrator rights. Click again"; setTimeout(() => { if (armed && !b.disabled) { armed = false; b.textContent = "⚡ " + f.label; } }, 6000); return; }
+      armed = false; b.disabled = true; b.textContent = "Changing it… (answer Windows' prompt)";
+      const r = await P.pc("netfix", { setting: f.setting, value: f.value, why });
+      b.disabled = false; b.textContent = "⚡ " + f.label;
+      if (!r || !r.ok) return toast((r && r.error) || "It couldn't be changed.", true, 7000);
+      toast(r.same ? "It was already set that way." : "Done. The connection blinks once. It's under What you changed (Network or Internet page), with Undo.", false, 7000);
+      await load(); if (DET.which) { const d = await P.pc("detail", { which: DET.which }); if (DET.which) { DET.data = d; drawDetail(); } }
+    };
+    return b;
+  }
+  // "What you changed": your own notes and the app's own changes, with the drops per day before and after each one
+  function changesSection(list, which) {
+    const c = section("What you changed (" + list.length + ")");
+    c.appendChild(el("p", "kv", "Note each thing you try (a new driver, another cable, another router port…). The app compares the drops per day in the 7 days before with the days since, so you can see whether it helped."));
+    for (const ch of list.slice(0, 30)) {
+      const r = el("div", "hrow"), t = el("div", "t"), hd = el("div", "row"); hd.style.cssText = "gap:8px;align-items:flex-start";
+      hd.appendChild(el("b", "grow", ch.text + (ch.undone ? " (undone " + new Date(ch.undone).toLocaleDateString() + ")" : "")));
+      if (ch.auto && !ch.undone && WIN) hd.appendChild(btn("ghost small", "Undo", async (e) => { const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Undoing…"; } const x = await P.pc("netundo", { id: ch.id }); if (!x || !x.ok) throw new Error((x && x.error) || "It couldn't be undone."); toast("Put back as it was."); const d = await P.pc("detail", { which }); if (DET.which === which) { DET.data = d; drawDetail(); } }, "Put the setting back as it was (Windows asks for administrator rights)"));
+      hd.appendChild(btn("ghost small", "✕", async () => { await P.pc("changes", { action: "remove", id: ch.id }); const d = await P.pc("detail", { which }); if (DET.which === which) { DET.data = d; drawDetail(); } }, "Remove this note (doesn't undo anything)"));
+      t.appendChild(hd);
+      const st = ch.stats || {}, f = (x) => (x == null ? "" : x < 0.1 && x > 0 ? x.toFixed(2) : x.toFixed(1));
+      t.appendChild(el("small", null, new Date(ch.t).toLocaleString() + (ch.auto ? " · done by the app" : "")));
+      t.appendChild(el("p", null, "Before: " + f(st.perDayBefore) + " drops a day (" + (st.before || 0) + " in the 7 days before). After: " + (st.perDayAfter == null ? "too soon to tell, check back tomorrow" : f(st.perDayAfter) + " a day (" + st.after + " in " + (st.afterDays >= 1 ? st.afterDays.toFixed(1) + " days" : Math.round(st.afterDays * 24) + " h") + ")" + (st.afterDays >= 2 && st.perDayBefore > 0 ? (st.perDayAfter < st.perDayBefore * 0.5 ? ": looks like it helped" : st.perDayAfter >= st.perDayBefore * 0.9 ? ": no better so far" : ": a bit better") : "")) + "."));
+      r.appendChild(t); c.appendChild(r);
+    }
+    const add = el("div", "row"); add.style.cssText = "gap:8px;margin-top:8px;flex-wrap:wrap";
+    const inp = el("input"); inp.placeholder = "What did you change? e.g. new Cat 6 cable"; inp.style.cssText = "flex:1;min-width:220px";
+    const when = el("input"); when.type = "datetime-local"; const z = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); when.value = z.toISOString().slice(0, 16);
+    add.appendChild(inp); add.appendChild(when);
+    add.appendChild(btn("small", "Add", async () => { if (!inp.value.trim()) throw new Error("Write what you changed first."); await P.pc("changes", { action: "add", text: inp.value, t: new Date(when.value).getTime() || Date.now() }); const d = await P.pc("detail", { which }); if (DET.which === which) { DET.data = d; drawDetail(); } }));
+    c.appendChild(add);
+    return c;
+  }
   // numbered steps; each item is a string, or {t: title, s: [steps], links: [{label, url}], open: [{label, tool}]}
   function stepsBox(steps, title) {
     const w = el("div", "steps"); if (title) w.appendChild(el("div", "lbl2", title));
@@ -144,6 +182,7 @@
       if (typeof st === "string") { (w.lastChild && w.lastChild.tagName === "OL" ? w.lastChild : w.appendChild(el("ol"))).appendChild(el("li", null, st)); continue; }
       w.appendChild(el("b", null, st.t)); const ol = el("ol"); for (const x of st.s || []) ol.appendChild(el("li", null, x)); w.appendChild(ol);
       const bt = stepButtons([st.t].concat(st.s || []), (st.links || []).concat(st.open || [])); if (bt) w.appendChild(bt);
+      if (st.fix && st.fix.length && WIN) { const fx = el("div", "stepbtns"); for (const f of st.fix) fx.appendChild(fixBtn(f, st.t)); w.appendChild(fx); }
     }
     if (loose.length) { const bt = stepButtons(loose); if (bt) w.appendChild(bt); }
     return w;
@@ -341,6 +380,7 @@
     }
     if (w === "cpu" && (T.drives || []).length) { const c = section("Drive temperatures"); c.appendChild(factGrid(T.drives.map((x) => [(x.letters ? x.letters + "  " : "") + (x.model || x.n), x.c + " °C" + (x.warn ? " (warning at " + x.warn + " °C)" : "")]))); box.appendChild(c); }
     // problems the app saw
+    if (w === "net" || w === "link") box.appendChild(changesSection(d.changes || [], w));
     const incAll = d.incidents || [], incLive = incAll.filter((i) => !i.dismissed || i.open), incGone = incAll.filter((i) => i.dismissed && !i.open);
     const pc = section("Problems seen (" + incLive.length + ")");
     if (!incLive.length) pc.appendChild(el("p", "kv", incGone.length ? "Nothing new: " + incGone.length + " dismissed below." : "Nothing went wrong with it since the watching started."));
@@ -383,7 +423,7 @@
   const day = (t) => { const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
   const clock = (t) => { const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); };
   const OUT_WHAT = { blip: null, down: "Internet past the router (the router still answered)", router: "The router stopped answering", cable: "This PC's own connection (cable or Wi-Fi)", dns: "Names didn't resolve (the provider's DNS)", slow: "Unstable: answers lost or very slow" };
-  function outageText(list, from, to) {
+  function outageText(list, from, to, changes) {
     const drops = list.filter((o) => o.what !== "slow" && o.what !== "dns"), shaky = list.filter((o) => o.what === "slow" || o.what === "dns");
     const len = (o) => Math.max(1000, o.end - o.t), sum = (a) => a.reduce((n, o) => n + len(o), 0);
     const prov = drops.filter((o) => o.what === "down"), unk = drops.filter((o) => o.what === "blip"), mine = drops.filter((o) => o.what === "cable" || o.what === "router");
@@ -405,6 +445,7 @@
       L.push("EVERY EVENT", "Date        Start     End       Length    What was down");
       for (const o of list) L.push(day(o.t) + "  " + clock(o.t) + "  " + (o.open ? "ongoing " : clock(o.end)) + "  " + span(len(o)).padEnd(8) + "  " + (OUT_WHAT[o.what] || (o.what === "blip" ? "Internet (short drop; which part wasn't noted)" : o.what)));
     }
+    if (changes && changes.length) { L.push("", "CHANGES MADE (and drops per day in the 7 days before / since)"); for (const c of changes.slice().reverse()) { const st = c.stats || {}; L.push(day(c.t) + "  " + clock(c.t) + "  " + c.text + (c.undone ? " (later undone)" : "") + "  [before " + (st.perDayBefore || 0).toFixed(1) + "/day, after " + (st.perDayAfter == null ? "too soon" : st.perDayAfter.toFixed(1) + "/day") + "]"); } }
     if (prov.length) L.push("", "In " + prov.length + " of these drops the router kept answering while the internet past it didn't, so the problem was between the modem and the provider, not inside the home network.");
     return L.join("\n");
   }
@@ -414,8 +455,8 @@
     const f = $("pcOutFrom").value, t = $("pcOutTo").value; if (!f || !t) throw new Error("Pick both dates.");
     const from = new Date(f + "T00:00:00").getTime(), to = new Date(t + "T00:00:00").getTime() + 86400000;
     if (to <= from) throw new Error("The second date is before the first.");
-    const list = (await P.pc("outages", { from, to })) || [];
-    $("pcOutText").textContent = outageText(list, from, to); $("pcOutText").hidden = false; $("pcOutActs").hidden = false; OUT_NAME = f + " to " + t;
+    const list = (await P.pc("outages", { from, to })) || [], changes = (await P.pc("outchanges", { from, to })) || [];
+    $("pcOutText").textContent = outageText(list, from, to, changes); $("pcOutText").hidden = false; $("pcOutActs").hidden = false; OUT_NAME = f + " to " + t;
   });
   $("pcOutCopy").onclick = guard(async () => { await window.native.copyText($("pcOutText").textContent); toast("Report copied. Paste it in an e-mail or a chat with your provider."); });
   $("pcOutSave").onclick = guard(async () => { const r = await P.pc("outagesave", { text: $("pcOutText").textContent, name: OUT_NAME }); if (!r || !r.ok) throw new Error((r && r.error) || "It couldn't be saved."); toast("Saved in your Downloads folder, under aGoldenDiagnose."); });

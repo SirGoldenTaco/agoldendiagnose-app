@@ -85,10 +85,61 @@ async function checkUpdates(manual) {
     else showUpd(CFG.name + " " + appVersion);
     return;
   }
-  if (r.available) { updUI.latest = r.latest; showUpd(CFG.name + " " + r.latest + " is available (you have " + r.current + ").", "avail"); }
+  if (r.available) {
+    updUI.latest = r.latest; updUI.info = r.info || null; updUI.current = r.current;
+    let skip = ""; try { skip = localStorage.getItem("updSkip") || ""; } catch (e) {}
+    if (!manual && CFG.share && skip === r.latest) { showUpd(CFG.name + " " + r.current); return; }      // you chose to skip that one
+    if (!manual && !updNotify()) { showUpd(CFG.name + " " + r.current); return; }                           // "Tell me when an update is available" is off
+    showUpd(CFG.name + " " + r.latest + " is available (you have " + r.current + ").", "avail");
+  }
   else showUpd(manual ? "You're on the latest version (" + r.current + ")." : CFG.name + " " + r.current);
 }
+/* The copy given to other people never updates without asking: Update first shows what's in the new version (the
+   release page's notes, its date, size and SHA-256) over the page, and only "Agree and update" downloads it.
+   "Not now" closes it; "Skip this version" also stops the start-up notice for that version (Check for updates still finds it). */
+function updMd(md) {
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  const inl = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/(https:\/\/[^\s<)]+)/g, '<a href="$1" data-ext>$1</a>');
+  let out = "", inList = false;
+  for (const line of String(md).replace(/\r/g, "").split("\n")) {
+    if (/^\s*- /.test(line)) { if (!inList) { out += "<ul>"; inList = true; } out += "<li>" + inl(line.replace(/^\s*- /, "")) + "</li>"; continue; }
+    if (inList) { out += "</ul>"; inList = false; }
+    if (/^#{1,3} /.test(line)) out += "<h4>" + inl(line.replace(/^#+ /, "")) + "</h4>";
+    else if (line.trim()) out += "<p>" + inl(line) + "</p>";
+  }
+  return out + (inList ? "</ul>" : "");
+}
+function updNotify() { try { return localStorage.getItem("updNotify") !== "0"; } catch (e) { return true; } }
+function setUpdNotify(on) { try { localStorage.setItem("updNotify", on ? "1" : "0"); } catch (e) {} const c = document.getElementById("pUpdNotify"); if (c) c.checked = on; }
+function askUpdate() {
+  return new Promise((done) => {
+    const i = updUI.info || {}, notes = String(i.notes || ""), cut = notes.indexOf("## Download"), what = (cut > 0 ? notes.slice(0, cut) : notes).replace(/<details>[\s\S]*?<\/details>/g, "").replace(/^Line-by-line differences:.*$/m, "");
+    const o = document.createElement("div"); o.id = "updAsk";
+    o.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px";
+    const mb = i.size ? (i.size / 1048576).toFixed(0) + " MB" : "";
+    o.innerHTML = '<div role="dialog" aria-modal="true" aria-labelledby="updAskT" style="background:var(--card,#16181d);color:var(--text,#eee);border:1px solid var(--gold,#e3b341);border-radius:14px;max-width:760px;width:100%;max-height:88vh;display:flex;flex-direction:column">'
+      + '<div style="padding:16px 18px 8px"><b id="updAskT" style="font-size:19px">Update to ' + CFG.name + " " + updUI.latest + "?</b>"
+      + '<div class="small" style="opacity:.8;margin-top:4px">You have ' + (updUI.current || appVersion) + (i.date ? " · released " + new Date(i.date).toLocaleString() : "") + (mb ? " · " + mb + " to download" : "") + "</div></div>"
+      + '<div style="overflow:auto;padding:0 18px;line-height:1.5">' + (what.trim() ? updMd(what) : "<p>The release page has no notes for this version.</p>")
+      + '<h4>Details</h4><p class="small">' + (i.file ? "File: <code>" + i.file + "</code><br>" : "") + (i.sha256 ? "SHA-256: <code style=\"word-break:break-all\">" + i.sha256 + "</code><br>" : "") + "Built by GitHub from the public source code, with a build attestation and virus scans listed on the release page." + (i.page ? ' <a href="' + i.page + '" data-ext>Open the release page</a>' : "") + "</p>"
+      + '<p class="small" style="opacity:.8">Nothing is downloaded unless you agree. Your settings and reports stay as they are. ' + CFG.name + " closes and reopens to finish.</p></div>"
+      + '<label class="small" style="display:flex;gap:8px;align-items:center;padding:8px 18px 0;cursor:pointer"><input type="checkbox" id="updAskQuiet"' + (updNotify() ? "" : " checked") + '> Don\'t tell me when a new version is available (Check for updates still finds them; Settings turns it back on)</label>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line,#333)"><button type="button" class="ghost small" data-a="skip">Skip this version</button><button type="button" class="ghost small" data-a="no">Not now</button><button type="button" class="small" data-a="yes">Agree and update</button></div></div>';
+    const close = (v) => { const q = o.querySelector("#updAskQuiet"); if (q) setUpdNotify(!q.checked); document.removeEventListener("keydown", key, true); o.remove(); done(v); };
+    const key = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(false); } };
+    o.onclick = (e) => {
+      const ext = e.target.closest("a[data-ext]"); if (ext) { e.preventDefault(); if (window.native && window.native.openUrl) window.native.openUrl(ext.getAttribute("href")); return; }
+      const a = e.target.closest("button[data-a]"); if (!a) return;
+      if (a.dataset.a === "skip") { try { localStorage.setItem("updSkip", updUI.latest); } catch (x) {} showUpd(CFG.name + " " + (updUI.current || appVersion) + " · skipped " + updUI.latest); return close(false); }
+      if (a.dataset.a === "no") { showUpd(CFG.name + " " + updUI.latest + " is available (you have " + (updUI.current || appVersion) + ").", "avail"); return close(false); }
+      close(true);
+    };
+    document.addEventListener("keydown", key, true);
+    document.body.appendChild(o); o.querySelector('[data-a="no"]').focus();
+  });
+}
 async function installUpdate() {
+  if (CFG.share && !(await askUpdate())) return;
   updUI.busy = true; updUI.go.disabled = true; showUpd("Downloading the update…", "busy");
   const r = await NATIVE.installUpdate();
   updUI.busy = false; updUI.go.disabled = false;
@@ -98,6 +149,7 @@ async function installUpdate() {
 }
 window.__updateProgress = (pct) => { if (updUI.busy) showUpd("Downloading the update… " + pct + "%", "busy"); };
 async function initUpdates() {
+  const sw = document.getElementById("pUpdNotify"); if (sw) { sw.checked = updNotify(); sw.onchange = () => { setUpdNotify(sw.checked); if (sw.checked) checkUpdates(false); }; }
   const box = $("upd");
   box.className = "upd";
   box.innerHTML = '<span class="t">…</span><button class="ghost small" type="button">Check for updates</button><button class="small" type="button" hidden>Update</button>';
