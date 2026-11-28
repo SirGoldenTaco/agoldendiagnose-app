@@ -158,7 +158,7 @@ if ($a) {
 $re = 'e1[a-z]*express|e2f|e1i|rt6[0-9]+|rtl|realtek|intel|netwtw|netwlv|ndis|tcpip|dhcp|wlan|mlx|aqnic|aqtion|marvell|b57|killer|netadaptercx|ixgbe|igc|i225|i226|mediatek|qualcomm'
 $s = [DateTimeOffset]::FromUnixTimeMilliseconds(${from}).LocalDateTime; $e = [DateTimeOffset]::FromUnixTimeMilliseconds(${to}).LocalDateTime
 $ev = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = $s; EndTime = $e } -MaxEvents 400 | Where-Object { $_.ProviderName -match $re -or $_.Message -match 'network link|link (is )?(down|disconnected)|disconnected from the network|has begun resetting' } | Select-Object -First 25
-$o.events = @($ev | ForEach-Object { $m = ($_.Message -replace '\\s+', ' '); @{ t = ([DateTimeOffset]$_.TimeCreated).ToUnixTimeMilliseconds(); p = [string]$_.ProviderName; id = $_.Id; m = $m.Substring(0, [Math]::Min(260, $m.Length)) } })
+$o.events = @($ev | ForEach-Object { $m = ($_.Message -replace '\\s+', ' '); @{ t = ([DateTimeOffset]$_.TimeCreated).ToUnixTimeMilliseconds(); p = [string]$_.ProviderName; id = $_.Id; m = $m.Substring(0, [Math]::Min(1200, $m.Length)) } })
 $wk = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = (Get-Date).AddDays(-7); Id = 27, 32, 10400, 10317, 4202, 7021 } -MaxEvents 500 | Where-Object { $_.ProviderName -match $re }
 $o.week = @{ down = @($wk | Where-Object { $_.Id -eq 27 -or $_.Message -match 'disconnect|link (is )?down' }).Count; resets = @($wk | Where-Object { $_.Id -eq 10400 -or $_.Message -match 'resetting' }).Count; all = @($wk).Count }
 $o | ConvertTo-Json -Depth 5 -Compress`;

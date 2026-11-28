@@ -225,6 +225,46 @@
     d.appendChild(row); d.appendChild(out);
     return d;
   }
+  /* "✨ Ask AI about this": one press, no typing. What the app found and suggested goes to whichever AI is set up
+     (Settings → AI), which explains what most likely happened and what to do, for this PC. The answer stays in the card. */
+  function aiBox(key, title, ctx) {
+    const w = el("div", "aiexp"), saved = store.get("aiexp:" + key, null);
+    const who = () => store.get("aiLocal", false) ? "the local AI" : "Claude";
+    const draw = (a) => {
+      w.textContent = "";
+      if (a) {
+        w.appendChild(el("div", "lbl2", "What " + (a.who || "the AI") + " says"));
+        const t = el("div", "a", a.text); t.style.whiteSpace = "pre-wrap"; w.appendChild(t);
+        const r = el("div", "row"); r.style.cssText = "gap:8px;margin-top:6px;flex-wrap:wrap";
+        r.appendChild(el("small", "dim grow", "Asked " + new Date(a.t).toLocaleString() + "."));
+        r.appendChild(btn("ghost small", "Ask again", go)); r.appendChild(btn("ghost small", "✕ Hide", () => { store.set("aiexp:" + key, null); draw(null); }, "Hide this answer"));
+        w.appendChild(r);
+      } else w.appendChild(btn("small", "✨ Ask AI about this", go, "What happened and what to do, explained for this PC by the AI set up in Settings → AI"));
+    };
+    async function go(e) {
+      const b = e && e.target; if (b) { b.disabled = true; b.textContent = "Asking " + who() + "… (a few seconds)"; }
+      try {
+        let c = ""; try { c = String(ctx() || "").slice(0, 7000); } catch (x) { c = title; }
+        const prompt = "You are helping someone use aGoldenDiagnose, a Windows app that watches PC games and the PC for problems. It noticed the problem below on their PC and gathered what it could. Explain in plain words, without jargon: (1) what most likely happened and why, (2) how sure you are and what in the details points to it (say if something in the details is harmless or unrelated, like a log line that isn't the cause), (3) what to do, most likely fix first, as at most 6 concrete numbered steps for their exact hardware, drivers and settings. If it's most likely outside the PC (router, modem, provider, the game's servers), say so and say how to check. Don't invent settings or facts that aren't in the details; if you're unsure, say what to look for. Plain text, short paragraphs and a numbered list; no markdown symbols.\n\nWhat the app found:\n" + c;
+        const r = window.askAI ? await window.askAI(prompt) : { ok: false, error: "none" };
+        if (!r.ok) throw new Error(r.error === "none" ? "No AI is set up yet: Settings → AI (your own Claude key, or a local AI model on this PC)." : r.error);
+        const a = { text: r.text || "(no answer)", t: Date.now(), who: who() === "Claude" ? "Claude" : "the local AI" };
+        store.set("aiexp:" + key, a); alog("pc ai explain: " + title); draw(a);
+      } finally { if (b && b.isConnected) { b.disabled = false; b.textContent = "✨ Ask AI about this"; } }
+    }
+    draw(saved);
+    return w;
+  }
+  // everything a problem card shows, as text for the AI
+  const incCtx = (i) => () => {
+    const L = [i.title + " (" + new Date(i.at || i.t).toLocaleString() + (i.end ? ", lasted " + span(i.end - i.t) : i.open ? ", still going on" : "") + ")" + (i.count > 1 ? ", seen " + i.count + " times" : ""), i.detail || ""];
+    if (i.top && i.top.cpu && i.top.cpu.length) L.push("Processor then: " + i.top.cpu.filter((x) => x.cpu > 0).slice(0, 6).map((x) => x.name + " " + x.cpu + "%").join(", "));
+    if (i.top && i.top.mem && i.top.mem.length) L.push("Memory then: " + i.top.mem.slice(0, 6).map((x) => x.name + " " + gb(x.mem)).join(", "));
+    if (i.net) L.push("Internet then: " + ((i.net.pings || []).map((x) => x.host + " " + (x.ms > 0 ? x.ms + " ms" : "no answer")).join(", ")) + (i.net.gatewayMs > 0 ? ", router " + i.net.gatewayMs + " ms" : ", router no answer") + (i.net.adapter ? " (" + i.net.adapter + (i.net.mbps ? ", " + i.net.mbps + " Mbps" : "") + ")" : ""));
+    if (i.source) L.push("From Windows' event log: " + i.source);
+    if (i.kind === "net") L.push(netCtx(i)());
+    return L.filter(Boolean).join("\n");
+  };
   const netCtx = (i) => () => { const g = i.diag || {}, c = g.card || {}; return [i.title + " (" + new Date(i.at || i.t).toLocaleString() + ")", i.detail || "", ...(g.found || []), c.desc ? "Card: " + c.desc + ", " + (c.speed || "") + ", driver " + (c.driver || "") + " (" + (c.date || "") + ")" : "", ...(g.settings || []).map((x) => "Setting “" + x.n + "” = " + x.v + (x.vals && x.vals.length ? " (choices: " + x.vals.join(", ") + ")" : "")), g.allowOff ? "Allow the computer to turn off this device: " + g.allowOff : "", "Suggested:", ...(g.steps || []).map((st) => st.t + ": " + (st.s || []).join(" "))].filter(Boolean).join("\n"); };
 
   // "Look into it" / "Look again": reads the network card again (a few seconds), then redraws wherever the drop is
@@ -246,6 +286,7 @@
       if (i.diag.at) d.appendChild(el("p", "kv", "Looked at " + new Date(i.diag.at).toLocaleString() + "."));
       d.appendChild(btn("ghost small", "Look again", (e) => lookInto(i, e)));
     } else d.appendChild(btn("small", "Look into it", (e) => lookInto(i, e)));
+    d.appendChild(aiBox("inc:" + i.id, i.title, incCtx(i)));
     d.appendChild(askBox("inc:" + i.id, i.title, netCtx(i)));
   }
 
@@ -267,6 +308,7 @@
       if (i.source) facts.push("From Windows' event log: " + i.source);
       if (facts.length) { const f = el("div", "kv"); f.style.whiteSpace = "pre-wrap"; f.textContent = "At that moment\n" + facts.join("\n"); d.appendChild(f); }
       netFindings(i, d);
+      if (i.kind !== "net" || i.open) { d.appendChild(aiBox("inc:" + i.id, i.title, incCtx(i))); if (!i.open) d.appendChild(askBox("inc:" + i.id, i.title, incCtx(i))); }
       into.appendChild(d);
     };
     for (const i of list.slice(0, 120)) drawOne(i, false, box);
@@ -308,7 +350,7 @@
       t.appendChild(head); t.appendChild(el("small", null, it.area)); if (it.text) t.appendChild(el("p", null, it.text));
       const steps = it.steps || (it.tip ? [it.tip] : null);
       if (steps && !ignored) { const dd = el("details", "todo"); dd.open = it.sev === "bad"; dd.appendChild(el("summary", null, "What to do")); dd.appendChild(stepsBox(steps)); t.appendChild(dd); }
-      if (!ignored) t.appendChild(askBox("chk:" + keyOf(it), it.title, () => [it.area + ": " + it.title, it.text, "Suggested:", ...(steps || [])].filter(Boolean).join("\n")));
+      if (!ignored) { const cx = () => [it.area + ": " + it.title, it.text, "Suggested:", ...(steps || []).map((x) => typeof x === "string" ? x : x.t + ": " + (x.s || []).join(" "))].filter(Boolean).join("\n"); t.appendChild(aiBox("chk:" + keyOf(it), it.title, cx)); t.appendChild(askBox("chk:" + keyOf(it), it.title, cx)); }
       r.appendChild(t); return r;
     };
     const shown = h.items.filter((it) => it.sev !== "ok" && !ign[keyOf(it)]), hidden = h.items.filter((it) => it.sev !== "ok" && ign[keyOf(it)]);
