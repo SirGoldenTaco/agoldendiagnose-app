@@ -4,6 +4,19 @@ Every version of aGoldenDiagnose, and everything that changed in it. Nothing is 
 lists the files that changed and links to the exact line-by-line differences, which GitHub produces from the code itself,
 so this list can always be checked against what really changed.
 
+## 1.71–1.73 - 2026-11-27
+
+- **Fixed: Rename on the Games tab did nothing but show "prompt() is not supported".** The name is now edited right in the game's card: type it, then Save (or Enter); Cancel (or Esc) keeps the old one. The list holds still while you type. `web/diagnose.js`, `web/index.html`.
+- **Crashes caught by a game's own crash handler** (new, for every game): when a game crashes, many start a crash handler of their own (Unity's UnityCrashHandler, Unreal's CrashReportClient, or another one in the game's folder) that writes the report, and the game then ends as if nothing happened (code 0, no Windows error). The app now notices the crash handler still open when the game ends, waits for it to finish writing (up to 90 seconds), and reports a crash ("its crash handler caught it"). It also looks in the Temp folder, where Unity games put their crash reports (`Crashes\Crash_<date>`, with the dump and error.log), and recognises Unity's crash lines in its log (`Crash!!!` and the stack trace that follows). Crash handlers of other programs (a browser's, a chat app's) are left out. Works on Windows and on Linux (Proton). `desktop/watch.js`, `web/analyze.js`.
+- **Fixed: "Force close it and open this one" could leave you with no copy open.** When the open copy runs as administrator, Windows refuses to close it; the app now says so ("close it from its tray icon, then open it again") instead of quitting. Closing that question's window can no longer end the app before your choice is carried out. `desktop/single.js`.
+- **Inside the app:** the file behind "Minimize / Close to the system tray" and reopening where the window was is now the same as in the author's other apps (nothing changes in how it works). `desktop/tray.js`.
+
+## 1.70 - 2026-11-27
+
+- **✨ Ask AI about this** (new): every problem on the PC tab (an internet drop, a freeze, the PC running hot…) and every item of **Check my PC** now has an **✨ Ask AI about this** button. One press, nothing to type: what the app found and suggested for that problem is sent to the AI you set up in **Settings → AI** (your own Claude API key, or a local AI model on this PC, where nothing leaves the PC), which explains what most likely happened, what in the details points to it, and what to try first on your PC. The answer stays in the problem's card, with **Ask again** and **✕ Hide**. Without an AI set up, the button only says how to set one up; nothing is sent. `web/pc.js`, `web/index.html`.
+- **A question box on every problem**: "Something doesn't match, or a question? Ask about it" was only under internet drops; every problem has it now. `web/pc.js`.
+- **Fixed: Windows' log lines around an internet drop were still cut mid-word**, like "…causing all available lo". Windows shortened the message before the app could end it at a sentence; the app now reads the whole message and cuts it at the end of a sentence. `desktop/pc.js`.
+
 ## 1.68 - 2026-11-27
 
 - **New pictures on this page.** The five screenshots now show the app as it is today (they were from version 1.20): the Games tab, a crash report, the PC tab with Windows shortcuts and the lined-up drives, Settings, and a report on Linux. The games and the PC in them are still made up for the example. `screenshots/`.

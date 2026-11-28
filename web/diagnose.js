@@ -45,7 +45,9 @@ async function refresh() {
   ST = await N.state();
   drawGames(); drawReports(); drawSettings();
 }
+let RENAMING = "";          // the game whose name is being edited: the list holds still meanwhile
 function drawGames() {
+  if (RENAMING && document.querySelector(".g.renaming")) return;
   const running = ST.games.filter((g) => g.running), bn = $("banner");
   bn.className = "banner" + (ST.helper ? "" : " bad");
   $("bannerText").textContent = !ST.ok ? "Watching games only works on Windows." : !ST.helper ? "The watcher isn't running. It restarts by itself in a few seconds; if this stays, restart aGoldenDiagnose."
@@ -71,7 +73,21 @@ function drawGames() {
       const r = await N.dumps(g.exe, !on); if (!r || !r.ok) throw new Error((r && r.error) || "Windows didn't allow the change."); toast(on ? "Crash dumps are off for " + g.name + "." : "Windows will now save a crash dump when " + g.name + " crashes.", false, 5000);
     }, "A Windows feature (WER LocalDumps), per game");
     if (!/Linux/.test(navigator.userAgent) || /Android/i.test(navigator.userAgent)) acts.appendChild(dump);
-    acts.appendChild(btn("ghost small", "Rename", async () => { const n = prompt("Name shown for this game:", g.name); if (n && n.trim()) { await N.game({ key: g.key, name: n }); refresh(); } }));
+    // Rename right in the card (the window can't show the browser's own question box): Enter saves, Esc cancels
+    acts.appendChild(btn("ghost small", "Rename", () => {
+      RENAMING = g.key; c.classList.add("renaming");
+      const nm = top.querySelector(".nm"), inp = el("input"); inp.type = "text"; inp.value = g.name; inp.maxLength = 80; inp.className = "rename"; inp.setAttribute("aria-label", "Name shown for this game");
+      const ok = btn("small", "Save", () => done(true)), no = btn("ghost small", "Cancel", () => done(false));
+      nm.replaceWith(inp); inp.after(ok, no); inp.focus(); inp.select();
+      let busy = false;
+      async function done(save) {
+        if (busy) return; busy = true;
+        const n = inp.value.trim();
+        try { if (save && n && n !== g.name) await N.game({ key: g.key, name: n }); }
+        finally { RENAMING = ""; c.classList.remove("renaming"); refresh(); }
+      }
+      inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); done(true); } else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } };
+    }));
     acts.appendChild(btn("ghost small", g.watch ? "Stop watching" : "Watch", async () => { await N.game({ key: g.key, watch: !g.watch }); refresh(); }));
     acts.appendChild(btn("ghost small", "Remove", async () => { await N.game({ key: g.key, remove: true }); toast(g.name + " moved to Hidden. It isn't watched any more."); refresh(); }));
     c.appendChild(acts); box.appendChild(c);

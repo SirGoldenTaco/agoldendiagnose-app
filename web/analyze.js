@@ -91,7 +91,7 @@ function clip(s, n) {
     ["vram", /out of video memory|out of vram|OUT_OF_DEVICE_MEMORY|OUTOFVIDEOMEMORY|video memory (has been )?exhausted|not enough (video|graphics) memory|ran out of GPU memory/i],
     ["gpu", /DXGI_ERROR_DEVICE_(REMOVED|HUNG|RESET)|device (was |has been )?removed|D3D device (being |was )?lost|GPU (crashed|hung|has crashed)|0x887A000[567]|VK_ERROR_DEVICE_LOST|nvlddmkm|video driver (crashed|stopped)|display driver (stopped|has stopped|failed)|GetDeviceRemovedReason/i],
     ["oom", /out of memory|E_OUTOFMEMORY|std::bad_alloc|OutOfMemoryException|ran out of memory|0x8007000E|OUT_OF_HOST_MEMORY|could ?n[o']t allocate|failed to allocate|allocation of \d+ bytes failed|not enough memory|paging file is too small/i],
-    ["crash", /EXCEPTION_[A-Z_]+|access violation|unhandled exception|fatal error|LowLevelFatalError|assertion failed|assert(ion)? failed|segmentation fault|SIGSEGV|SIGABRT|stack overflow|crash (report|dump|detected|handler)|=+ ?crash|pure virtual function call|terminate called|has stopped working|critical error|engine (crash|exit requested)|Crash!!!|unreal engine is exiting|ErrorMessage:|Exception was unhandled/i],
+    ["crash", /EXCEPTION_[A-Z_]+|access violation|unhandled exception|fatal error|LowLevelFatalError|assertion failed|assert(ion)? failed|segmentation fault|SIGSEGV|SIGABRT|Crash!!!|OUTPUTTING STACK TRACE|stack overflow|crash (report|dump|detected|handler)|=+ ?crash|pure virtual function call|terminate called|has stopped working|critical error|engine (crash|exit requested)|Crash!!!|unreal engine is exiting|ErrorMessage:|Exception was unhandled/i],
     ["files", /corrupt(ed|ion)?\b|checksum (mismatch|failed)|failed to (open|load|read|mount) [^\n]{0,40}(pak|file|asset|bundle|archive)|pak (chunk|file)[^\n]{0,40}(error|corrupt|fail)|missing (file|dll|asset)|could ?n[o']t find (file|asset|dll)|file is damaged|decompression (error|failed)|CRC (error|mismatch)/i],
     ["anticheat", /(easyanticheat|battleye|anti-?cheat|vanguard|integrity)[^\n]{0,80}(error|fail|violation|kick|blocked|denied|not (running|installed|loaded))|game security violation|untrusted system file/i],
     ["driver", /driver[^\n]{0,60}(outdated|too old|out of date|not supported|update your)|unsupported (gpu|graphics card|video card)|shader compil[^\n]{0,40}(fail|error)|feature level[^\n]{0,40}(not supported|required)|requires directx/i],
@@ -212,7 +212,14 @@ function clip(s, n) {
       tip("Look at the last lines of the game's log in this report: games usually write why they stopped.");
     }
     // The game's own crash reporter caught it: Windows saw a clean exit (code 0, no error event), but the game's log says otherwise.
-    const loud = hits.filter((h) => h.tag === "crash" && /unhandled exception|fatal error|LowLevelFatalError|access violation|EXCEPTION_ACCESS_VIOLATION|assert(ion)? failed|crash (dump|detected)|segmentation fault|pure virtual function/i.test(h.text || ""));
+    const loud = hits.filter((h) => h.tag === "crash" && /unhandled exception|fatal error|LowLevelFatalError|access violation|EXCEPTION_ACCESS_VIOLATION|assert(ion)? failed|crash (dump|detected)|segmentation fault|pure virtual function|Crash!!!/i.test(h.text || ""));
+    // the game's crash handler was still open after it ended: it crashed, even if Windows saw a clean exit
+    if (kind === "normal" && (r.crashHandler || []).length) {
+      kind = "crash"; title = "The game crashed (its crash handler caught it)";
+      why = "Windows saw the game close without an error, but its crash handler (" + r.crashHandler.join(", ") + ") was running when it ended: that's what the game starts when it crashes.";
+      find("bad", "Its crash handler ran", r.crashHandler.join(", ") + " was open when the game ended. Its report (a dump and a crash log) is in the Files tab if the game wrote one where the app could find it.");
+      tip("Verify the game's files in its launcher, and remove mods for a test."); tip("Turn off overlays and background tools, then update the graphics driver.");
+    }
     if (kind === "normal" && (r.crashFiles || []).length) {
       kind = "crash"; title = "The game crashed (its own crash reporter caught it)";
       why = "Windows saw the game close without an error, but the game left crash files behind during this session: " + r.crashFiles.slice(0, 4).join(", ") + ".";

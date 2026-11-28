@@ -1,4 +1,5 @@
-/* "Minimize to the system tray" and "Close to the system tray": two switches.
+/* Shared file: kept the same in every app that uses it (one source, copied out to each). */
+/* "Minimize to the system tray" and "Close to the system tray": two switches, the same in every app on Windows.
  * On: the minimize button / the X hides the window next to the clock instead of the taskbar / instead of quitting.
  * The choice is kept in tray.json beside the app's other data. Apps that already have a tray icon reuse it. */
 const { app, Tray, Menu, nativeImage, ipcMain } = require("electron");
@@ -35,7 +36,10 @@ const ROW = {
   swb: `<div class="sw"><div class="t"><b>${M1}</b><small>${cap(M2)}</small></div><label class="tg"><input type="checkbox" data-k="min"><i></i></label></div><div class="sw"><div class="t"><b>${C1}</b><small>${cap(C2)}</small></div><label class="tg"><input type="checkbox" data-k="close"><i></i></label></div>`,
   row: `<div class="row"><label><input type="checkbox" data-k="min">${M1} (${M2})</label></div><div class="row"><label><input type="checkbox" data-k="close">${C1} (${C2})</label></div>`,
   plain: `<label style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;font-size:13px;opacity:.85;cursor:pointer"><input type="checkbox" data-k="min" style="accent-color:#e3b341"> ${M1}</label><label style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:13px;opacity:.85;cursor:pointer"><input type="checkbox" data-k="close" style="accent-color:#e3b341"> ${C1}</label>`,
+  /* for an app in English and French: the words come from the page's own language (data-en / data-fr) */
+  bilingual: `<label class="check"><input type="checkbox" data-k="min"><span><span data-en="Minimize to the system tray" data-fr="Réduire dans la zone de notification"></span><small><span data-en="The minimize button hides the window next to the clock." data-fr="Le bouton Réduire cache la fenêtre à côté de l'horloge."></span></small></span></label><label class="check"><input type="checkbox" data-k="close"><span><span data-en="Close to the system tray" data-fr="Fermer dans la zone de notification"></span><small><span data-en="The X hides the window instead of quitting; quit from the icon next to the clock." data-fr="Le X cache la fenêtre au lieu de quitter; quittez à partir de l'icône à côté de l'horloge."></span></small></span></label>`,
 };
+ROW.tax = ROW.bilingual;      // the name it had before
 // Runs in the app's page: puts the switch into its settings, and puts it back if the page redraws them.
 function pageScript(ui) {
   return "(" + function (html, spots) {
@@ -68,9 +72,9 @@ let wired = false;
 /* Where the window was: reopening the app puts it back on the same monitor, at the same place and size (and maximized
    if it was). If that monitor isn't connected any more, the window opens where it normally would. Kept in window.json. */
 const placed = new WeakSet();
-function placement(w) {
+function placement(w, fileName) {
   if (!w || placed.has(w)) return; placed.add(w);
-  const { screen } = require("electron"), file = path.join(app.getPath("userData"), "window.json");
+  const { screen } = require("electron"), file = path.join(app.getPath("userData"), fileName || "window.json");
   let saved = null; try { saved = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { }
   try {
     if (saved && saved.b) {
@@ -145,3 +149,4 @@ exports.attach = function (w, o) {
 };
 exports.on = () => on;
 exports.close = () => { if (closeOn) sync(true); return closeOn && !!(appTray() || own); };
+exports.placement = placement;      // for an app's other windows: placement(win, "editor.json")

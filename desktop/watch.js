@@ -305,6 +305,20 @@ async function closeLost() {
 
 /* ---------------------------------------------------------------- building the report */
 const GENERIC = new Set(["game", "games", "launcher", "client", "win64", "win32", "shipping", "binaries", "bin", "x64", "x86", "the", "and", "studios", "studio", "entertainment", "interactive", "software", "corporation", "inc", "ltd", "llc", "gmbh", "limited", "company", "engine", "unreal", "unity", "application", "player", "steam", "data", "app", "apps", "program", "files", "retail", "release", "final", "edition", "windows", "microsoft"]);
+/* Crash handlers: programs a game starts when it crashes, which write the dump and the crash log (and often show a
+   "the game crashed" window). Unity's and Unreal's are known by name; any other one counts only when it runs from
+   the game's own folder (browsers and chat apps have crash handlers of their own). */
+const ENGINE_HANDLERS = /^(unitycrashhand|crashreportclie)/i;      // the start only: Linux cuts process names at 15 letters
+const OTHER_HANDLERS = /crash.?(handler|report|sender|send|reporter|uploader)|^crashpad|^bugsplat|^bssndrpt|^sentry/i;
+async function crashHandlers(s) {
+  const r = await ask("procs", {}, 15000); if (!r || !r.ok) return [];
+  const dir = String(s.dir || "").toLowerCase(), out = [];
+  for (const p of r.list || []) {
+    const n = String(p.name || ""), pth = String(p.path || "").toLowerCase();
+    if (ENGINE_HANDLERS.test(n) || (OTHER_HANDLERS.test(n) && dir && pth.startsWith(dir))) out.push(n);
+  }
+  return [...new Set(out)];
+}
 function tokensFor(s, g) {
   const t = new Set(), add = (x) => { x = String(x || "").toLowerCase().trim(); if (x.length >= 4 && !GENERIC.has(x)) t.add(x); };
   const base = s.exe.replace(/\.(exe|x86_64|x86)$/i, ""); add(base); add(base.replace(/[-_.](win64|win32|wingdk|x64|x86|shipping|dx11|dx12|vulkan|retail|final|release)\b/gi, "").replace(/[-_.]+$/, ""));
@@ -326,6 +340,14 @@ async function finish(s, exit, end) {
   const g = CFG.games[s.key] || { exe: s.exe, name: prettyName(s.exe) };
   const lost = exit.how === "lost";
   if (!lost) await sleep(6000);                   // Windows and the game's crash reporter need a moment to write their files
+  // A crash handler still open after the game ended (Unity's, Unreal's, or one in the game's own folder) means the
+  // game crashed, even when it ended with code 0; its report is read only once it's done writing (up to 90 s).
+  const handlers = lost ? [] : await crashHandlers(s);
+  if (handlers.length) {
+    alog(`${s.exe}: crash handler running after it ended: ${handlers.join(", ")}; waiting for it to finish`);
+    for (let i = 0; i < 45; i++) { await sleep(2000); if (!(await crashHandlers(s)).length) break; }
+    await sleep(1500);
+  }
   const evr = await ask("events", { from: s.start - 5000, to: Date.now() + 1000 }, 40000);
   const events = ((evr && evr.list) || []).sort((a, b) => a.t - b.t);
   const exeLow = s.exe.toLowerCase(), mine = (e) => (e.data || []).concat([e.message || ""]).some((d) => String(d).toLowerCase().includes(exeLow));
@@ -347,6 +369,8 @@ async function finish(s, exit, end) {
     roots.push({ path: path.join(cfg, "unity3d"), depth: 3, needToken: true, kind: "game" }); roots.push({ path: cfg, depth: 3, needToken: true, kind: "game" }); roots.push({ path: data, depth: 3, needToken: true, kind: "game" }); roots.push({ path: docs, depth: 4, needToken: true, kind: "game" });
   } else
   for (const p of [E.LOCALAPPDATA, E.APPDATA, path.join(up, "AppData", "LocalLow"), docs, path.join(up, "Saved Games")]) if (p) roots.push({ path: p, depth: 5, needToken: true, kind: "game" });
+  // crash reports some engines leave in the Temp folder (Unity: Temp\<company>\<game>\Crashes\Crash_<date>\)
+  if (!LINUX && (E.TEMP || E.TMP)) roots.push({ path: E.TEMP || E.TMP, depth: 5, needToken: true, kind: "game" });
   roots.push({ path: DUMP_DIR, depth: 0, needToken: true, kind: "dump" });
   if (E.LOCALAPPDATA) { roots.push({ path: path.join(E.LOCALAPPDATA, "CrashDumps"), depth: 0, needToken: true, kind: "dump" }); roots.push({ path: path.join(E.LOCALAPPDATA, "Microsoft", "Windows", "WER"), depth: 2, needToken: true, kind: "wer" }); roots.push({ path: path.join(E.LOCALAPPDATA, "Temp"), depth: 2, needToken: true, kind: "game" }); }
   if (E.PROGRAMDATA) roots.push({ path: path.join(E.PROGRAMDATA, "Microsoft", "Windows", "WER"), depth: 2, needToken: true, kind: "wer" });
@@ -373,6 +397,7 @@ async function finish(s, exit, end) {
   const report = { v: 1, platform: LINUX ? "linux" : "windows", id: path.relative(DATA, s.folder).replace(/\\/g, "/"), made: Date.now(),
     game: { name: g.name, exe: s.exe, path: s.path, dir: s.dir, version: s.ver ? s.ver.version : "", company: s.ver ? s.ver.company : "", product: s.ver ? s.ver.product : "", wine: !!s.wine },
     start: s.start, end, title: s.title || "", exit, stats: statsOf(s), events, files, dumps, logHits, system: sysCache || {}, others: s.others || [],
+    crashHandler: handlers,
     modules: (s.modules || []).map((m) => m.replace(/^.*[\\/]/, "")).slice(0, 400), localDumps: ld && ld.ok ? { on: !!ld.on } : null, scan: sc && sc.result ? { dirs: sc.result.dirs, ms: sc.result.ms, tokens } : null };
   if (!LINUX && exit && exit.how !== "lost" && exit.code !== 0) { try { report.ansiNames = ansiNames(s, s.start); } catch (e) { alog("names check: " + e.message); } }
   // files a crash leaves behind, even when the dump itself can't be read: any dump, or anything from a crash reporter's folder
